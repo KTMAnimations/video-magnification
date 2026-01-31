@@ -45,3 +45,7 @@ Thumbs.db
 
 # Plan file
 video-magnification-webapp-plan.md
+
+# Playwright/MCP artifacts
+.playwright-mcp/e2e-*.png
+.playwright-mcp/uvicorn.log

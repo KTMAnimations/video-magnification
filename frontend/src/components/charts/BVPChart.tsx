@@ -18,8 +18,8 @@ export function BVPChart({ bvp, label = 'BVP Signal' }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="dark-panel" style={{ height: 200 }}>
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="dark-panel">
+          <ResponsiveContainer width="100%" height={200}>
             <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis

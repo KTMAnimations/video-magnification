@@ -99,7 +99,6 @@ export function WebcamPanel({ onStop }: Props) {
     const video = videoRef.current;
     if (!video) return;
 
-    resetEvmState();
     stopVideoElement();
     stopOverlayVideoElement();
 
@@ -125,7 +124,7 @@ export function WebcamPanel({ onStop }: Props) {
       // Some browsers require a user gesture; leave the video paused.
       console.debug('Autoplay blocked:', err);
     }
-  }, [inputSource, mitVideoPath, resetEvmState, stopOverlayVideoElement, stopVideoElement]);
+  }, [inputSource, mitVideoPath, stopOverlayVideoElement, stopVideoElement]);
 
   const stopLiveFeed = useCallback(() => {
     stopVideoElement();
@@ -165,10 +164,6 @@ export function WebcamPanel({ onStop }: Props) {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [startInput, stopVideoElement]);
-
-  useEffect(() => {
-    resetEvmState();
-  }, [resetEvmState, pulseOverlay, inputSource, mitVideoPath, useMitReferenceOverlay]);
 
   // Start sending frames when connected
   useEffect(() => {
@@ -379,7 +374,13 @@ export function WebcamPanel({ onStop }: Props) {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Input</div>
-              <Select value={inputSource} onValueChange={(v) => setInputSource(v as LiveInputSource)}>
+              <Select
+                value={inputSource}
+                onValueChange={(v) => {
+                  setInputSource(v as LiveInputSource);
+                  resetEvmState();
+                }}
+              >
                 <SelectTrigger size="sm" className="w-44">
                   <SelectValue />
                 </SelectTrigger>
@@ -393,7 +394,13 @@ export function WebcamPanel({ onStop }: Props) {
             {inputSource === 'mit' && (
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground">Test video</div>
-                <Select value={mitVideoPath} onValueChange={setMitVideoPath}>
+                <Select
+                  value={mitVideoPath}
+                  onValueChange={(v) => {
+                    setMitVideoPath(v);
+                    resetEvmState();
+                  }}
+                >
                   <SelectTrigger size="sm" className="w-64">
                     <SelectValue placeholder="Select a test video" />
                   </SelectTrigger>
@@ -466,7 +473,10 @@ export function WebcamPanel({ onStop }: Props) {
                 type="checkbox"
                 className="accent-primary"
                 checked={pulseOverlay}
-                onChange={(e) => setPulseOverlay(e.target.checked)}
+                onChange={(e) => {
+                  setPulseOverlay(e.target.checked);
+                  resetEvmState();
+                }}
               />
               Pulse overlay
             </label>
@@ -476,7 +486,10 @@ export function WebcamPanel({ onStop }: Props) {
                   type="checkbox"
                   className="accent-primary"
                   checked={useMitReferenceOverlay}
-                  onChange={(e) => setUseMitReferenceOverlay(e.target.checked)}
+                  onChange={(e) => {
+                    setUseMitReferenceOverlay(e.target.checked);
+                    resetEvmState();
+                  }}
                 />
                 MIT reference overlay
               </label>
