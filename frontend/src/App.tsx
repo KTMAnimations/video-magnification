@@ -125,7 +125,8 @@ function App() {
                 jobId,
                 onUploadProgress: (p) => {
                   if (typeof p.percent === 'number') {
-                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                    const percent = p.percent;
+                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
                   }
                 },
               },
@@ -143,7 +144,8 @@ function App() {
                 jobId,
                 onUploadProgress: (p) => {
                   if (typeof p.percent === 'number') {
-                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                    const percent = p.percent;
+                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
                   }
                 },
               },
@@ -154,7 +156,8 @@ function App() {
               jobId,
               onUploadProgress: (p) => {
                 if (typeof p.percent === 'number') {
-                  setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                  const percent = p.percent;
+                  setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
                 }
               },
             });
@@ -168,7 +171,8 @@ function App() {
                 jobId,
                 onUploadProgress: (p) => {
                   if (typeof p.percent === 'number') {
-                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                    const percent = p.percent;
+                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
                   }
                 },
               },
@@ -179,7 +183,8 @@ function App() {
               jobId,
               onUploadProgress: (p) => {
                 if (typeof p.percent === 'number') {
-                  setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                  const percent = p.percent;
+                  setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
                 }
               },
             });

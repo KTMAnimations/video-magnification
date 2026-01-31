@@ -4,6 +4,7 @@ import math
 import os
 import re
 import tempfile
+import uuid
 from pathlib import Path
 
 import cv2
@@ -80,6 +81,14 @@ def test_health_smoke():
         assert "error" in info
 
 
+def test_progress_endpoint_not_found():
+    client = TestClient(app)
+    res = client.get("/progress/does-not-exist")
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["status"] == "not_found"
+
+
 def test_color_magnify_with_roi():
     frames = _make_pulse_frames(n_frames=60, fps=30)
     mp4 = _write_mp4(frames, fps=30)
@@ -133,11 +142,12 @@ def test_audio_recover_smoke():
     frames = _make_pulse_frames(n_frames=60, fps=30)
     mp4 = _write_mp4(frames, fps=30)
     client = TestClient(app)
+    job_id = uuid.uuid4().hex
 
     res = client.post(
         "/audio/recover",
         files={"video": ("input.mp4", io.BytesIO(_read_file_bytes(mp4)), "video/mp4")},
-        data={"roi_x": "30", "roi_y": "30", "roi_w": "120", "roi_h": "120"},
+        data={"roi_x": "30", "roi_y": "30", "roi_w": "120", "roi_h": "120", "job_id": job_id},
     )
     assert res.status_code == 200
     payload = res.json()
@@ -149,6 +159,12 @@ def test_audio_recover_smoke():
     assert payload["data"]
     assert "waveform" in payload["data"]
     assert len(payload["data"]["waveform"]) > 10
+
+    prog = client.get(f"/progress/{job_id}")
+    assert prog.status_code == 200
+    p = prog.json()
+    assert p["status"] == "complete"
+    assert float(p.get("percent", 0.0)) >= 99.0
 
 
 def test_heartrate_pos_wang_cartoon_face():

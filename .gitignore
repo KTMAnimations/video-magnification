@@ -1,3 +1,18 @@
+# Backend repos (cloned)
+backends/
+
+# Data directories
+data/uploads/
+data/processed/
+data/temp/
+data/audio/
+
+# Model weights
+*.pth
+*.pth.tar
+*.ckpt
+*.pt
+
 # Python
 __pycache__/
 *.py[cod]
@@ -9,6 +24,10 @@ build/
 .venv/
 venv/
 env/
+
+# Node
+frontend/node_modules/
+frontend/dist/
 
 # IDE
 .vscode/
@@ -23,3 +42,6 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Plan file
+video-magnification-webapp-plan.md
