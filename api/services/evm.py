@@ -108,11 +108,20 @@ class EVMService(BaseService):
                     out[y0:y1, x0:x1] = roi_frame
                     result_frames.append(out)
 
+            warnings: list[str] = []
+
             # Write output
             out_name = f"{uuid.uuid4().hex}.mp4"
             out_path = PROCESSED_DIR / out_name
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            # Prefer H.264 (avc1) for in-browser playback (Chrome often can't decode mp4v).
+            fourcc = cv2.VideoWriter_fourcc(*"avc1")
             writer = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
+            if not writer.isOpened():
+                warnings.append("H.264 encoder unavailable; falling back to mp4v (may not play in-browser).")
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
+            if not writer.isOpened():
+                return ProcessingResult(success=False, error="Failed to initialize video writer.")
 
             for frame in result_frames:
                 # Clip float frames to [0, 255]
@@ -123,7 +132,7 @@ class EVMService(BaseService):
                 writer.write(frame)
             writer.release()
 
-            return ProcessingResult(success=True, output_path=out_name)
+            return ProcessingResult(success=True, output_path=out_name, warnings=warnings)
 
         except Exception as e:
             return ProcessingResult(success=False, error=f"EVM processing failed: {e}\n{traceback.format_exc()}")

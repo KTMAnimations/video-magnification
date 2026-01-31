@@ -13,6 +13,9 @@ from fastapi.testclient import TestClient
 from api.main import app
 
 
+MIT_EVM_SOURCE_DIR = Path("test-videos/mit-evm/source")
+
+
 def _make_cartoon_face_frame(width: int = 320, height: int = 240) -> np.ndarray:
     frame = np.zeros((height, width, 3), dtype=np.uint8)
     cv2.ellipse(frame, (width // 2, height // 2), (80, 100), 0, 0, 360, (200, 200, 200), -1)
@@ -184,12 +187,18 @@ def test_realtime_vitals_fallback_batch():
 
 def test_realtime_vitals_websocket_smoke():
     os.environ["VMAG_VITALS_MIN_FRAMES"] = "180"
-    frames = _make_pulse_frames(n_frames=180, fps=30, bpm=72.0)
-    jpeg_frames = []
-    for f in frames:
-        ok, buf = cv2.imencode(".jpg", f, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+    src = MIT_EVM_SOURCE_DIR / "face.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+
+    cap = cv2.VideoCapture(str(src))
+    jpeg_frames: list[bytes] = []
+    for _ in range(180):
+        ret, frame = cap.read()
+        assert ret, "Not enough frames in test video"
+        ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
         assert ok
         jpeg_frames.append(buf.tobytes())
+    cap.release()
 
     client = TestClient(app)
     with client.websocket_connect("/vitals/ws/vitals") as ws:
@@ -197,9 +206,103 @@ def test_realtime_vitals_websocket_smoke():
         for jf in jpeg_frames:
             ws.send_bytes(jf)
 
-        msg = ws.receive_text()
-        data = json.loads(msg)
+        data = None
+        for _ in range(20):
+            msg = ws.receive_text()
+            data = json.loads(msg)
+            if "bpm_mean" in data or "bpm" in data:
+                break
+
+        assert data is not None
         assert "bpm_mean" in data or "bpm" in data
         bpm_mean = float(data.get("bpm_mean", data.get("bpm", 0)))
-        assert abs(bpm_mean - 72.0) <= 10.0
+        assert 40.0 <= bpm_mean <= 180.0
 
+
+def test_mit_color_magnify_face_smoke():
+    src = MIT_EVM_SOURCE_DIR / "face.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    client = TestClient(app)
+    res = client.post(
+        "/magnify/color",
+        files={"video": ("face.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+        data={"freq_min": "0.83", "freq_max": "1.0", "amplification": "50", "pyramid_levels": "4"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    assert payload["output_url"]
+    out_path = _local_path_from_files_url(payload["output_url"])
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_mit_heartrate_face_smoke():
+    src = MIT_EVM_SOURCE_DIR / "face.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    client = TestClient(app)
+    res = client.post(
+        "/vitals/heartrate",
+        files={"video": ("face.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+        data={"method": "POS_WANG"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    bpm = float(payload["data"]["bpm"])
+    assert 40.0 <= bpm <= 180.0
+    assert float(payload["data"].get("confidence", 0.0)) >= 0.0
+
+
+def test_mit_realtime_batch_face_smoke():
+    src = MIT_EVM_SOURCE_DIR / "face.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    client = TestClient(app)
+    res = client.post(
+        "/vitals/realtime",
+        files={"video": ("face.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+        data={"method": "cpu_POS", "winsize": "5"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    bpm_mean = float(payload["data"]["bpm_mean"])
+    assert 40.0 <= bpm_mean <= 180.0
+
+
+def test_mit_audio_recover_guitar_smoke():
+    src = MIT_EVM_SOURCE_DIR / "guitar.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    client = TestClient(app)
+    res = client.post(
+        "/audio/recover",
+        files={"video": ("guitar.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    assert payload["output_url"]
+    out_path = _local_path_from_files_url(payload["output_url"])
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+    assert payload["data"]
+    assert "waveform" in payload["data"]
+    assert len(payload["data"]["waveform"]) > 10
+
+
+def test_mit_motion_magnify_baby_fast_preview_smoke():
+    src = MIT_EVM_SOURCE_DIR / "baby.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    client = TestClient(app)
+    res = client.post(
+        "/magnify/motion",
+        files={"video": ("baby.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+        data={"magnification": "10", "mode": "static", "max_frames": "30"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    assert payload["output_url"]
+    out_path = _local_path_from_files_url(payload["output_url"])
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0

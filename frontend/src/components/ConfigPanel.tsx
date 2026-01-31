@@ -1,5 +1,11 @@
 import { useState } from 'react';
 import type { Mode } from '../types';
+import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { Slider } from './ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { AlertTriangle, Settings } from 'lucide-react';
 
 interface Props {
   mode: Mode;
@@ -20,6 +26,7 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
   // Motion params
   const [magnification, setMagnification] = useState(20);
   const [motionMode, setMotionMode] = useState('static');
+  const [motionFastPreview, setMotionFastPreview] = useState(true);
 
   // Color params
   const [freqMin, setFreqMin] = useState(0.75);
@@ -35,7 +42,7 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
   const handleSubmit = () => {
     switch (mode) {
       case 'motion':
-        onSubmit({ magnification, mode: motionMode });
+        onSubmit({ magnification, mode: motionMode, maxFrames: motionFastPreview ? 120 : 0 });
         break;
       case 'color':
         onSubmit({ freqMin, freqMax, amplification, pyramidLevels });
@@ -54,111 +61,128 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
 
   return (
     <div className="max-w-xl mx-auto p-4">
-      <div className="panel">
-        <div className="panel-header">
-          &#9881; Parameters
-          {fileName && <span className="ml-auto text-[var(--color-text-dim)]">{fileName}</span>}
-        </div>
-        <div className="p-4 space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Settings className="h-4 w-4" />
+              Parameters
+            </CardTitle>
+            {fileName && (
+              <Badge variant="secondary" className="text-xs font-normal">
+                {fileName}
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
           {mode === 'motion' && (
             <>
               <div>
-                <label className="block text-[0.65rem] text-[var(--color-text-secondary)] uppercase mb-1">
-                  Magnification Factor: {magnification}x
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
+                  Magnification Factor: <Badge variant="secondary">{magnification}x</Badge>
                 </label>
-                <input
-                  type="range"
+                <Slider
                   min={1}
                   max={100}
-                  value={magnification}
-                  onChange={(e) => setMagnification(+e.target.value)}
-                  className="w-full accent-[var(--color-accent)]"
+                  step={1}
+                  value={[magnification]}
+                  onValueChange={([v]) => setMagnification(v)}
                 />
               </div>
               <div>
-                <label className="block text-[0.65rem] text-[var(--color-text-secondary)] uppercase mb-1">
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
                   Mode
                 </label>
-                <div className="flex gap-2">
-                  {['static', 'dynamic'].map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setMotionMode(m)}
-                      className={`btn-secondary ${motionMode === m ? '!border-[var(--color-accent)] !text-[var(--color-accent)]' : ''}`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
+                <Select value={motionMode} onValueChange={setMotionMode}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="static">Static</SelectItem>
+                    <SelectItem value="dynamic">Dynamic</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={motionFastPreview}
+                  onChange={(e) => setMotionFastPreview(e.target.checked)}
+                />
+                Fast preview (first 120 frames)
+              </label>
             </>
           )}
 
           {mode === 'color' && (
             <>
               <div>
-                <label className="block text-[0.65rem] text-[var(--color-text-secondary)] uppercase mb-1">
-                  Frequency Range: {freqMin.toFixed(2)} - {freqMax.toFixed(2)} Hz
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
+                  Frequency Range: <Badge variant="secondary">{freqMin.toFixed(2)} – {freqMax.toFixed(2)} Hz</Badge>
                 </label>
-                <div className="flex gap-2 items-center">
-                  <input
-                    type="range"
-                    min={0.01}
-                    max={15}
-                    step={0.01}
-                    value={freqMin}
-                    onChange={(e) => setFreqMin(+e.target.value)}
-                    className="flex-1 accent-[var(--color-accent)]"
-                  />
-                  <input
-                    type="range"
-                    min={0.01}
-                    max={15}
-                    step={0.01}
-                    value={freqMax}
-                    onChange={(e) => setFreqMax(+e.target.value)}
-                    className="flex-1 accent-[var(--color-accent)]"
-                  />
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-xs text-muted-foreground">Min</span>
+                    <Slider
+                      min={0.01}
+                      max={15}
+                      step={0.01}
+                      value={[freqMin]}
+                      onValueChange={([v]) => setFreqMin(v)}
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground">Max</span>
+                    <Slider
+                      min={0.01}
+                      max={15}
+                      step={0.01}
+                      value={[freqMax]}
+                      onValueChange={([v]) => setFreqMax(v)}
+                    />
+                  </div>
                 </div>
-                <div className="flex gap-2 mt-2">
+                <div className="flex gap-2 mt-3">
                   {FREQUENCY_PRESETS.map((p) => (
-                    <button
+                    <Button
                       key={p.label}
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         setFreqMin(p.min);
                         setFreqMax(p.max);
                       }}
-                      className="btn-secondary text-[0.6rem]"
+                      className="text-xs"
                     >
                       {p.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-[0.65rem] text-[var(--color-text-secondary)] uppercase mb-1">
-                  Amplification: {amplification}x
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
+                  Amplification: <Badge variant="secondary">{amplification}x</Badge>
                 </label>
-                <input
-                  type="range"
+                <Slider
                   min={1}
                   max={200}
-                  value={amplification}
-                  onChange={(e) => setAmplification(+e.target.value)}
-                  className="w-full accent-[var(--color-accent)]"
+                  step={1}
+                  value={[amplification]}
+                  onValueChange={([v]) => setAmplification(v)}
                 />
               </div>
               <div>
-                <label className="block text-[0.65rem] text-[var(--color-text-secondary)] uppercase mb-1">
-                  Pyramid Levels: {pyramidLevels}
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
+                  Pyramid Levels: <Badge variant="secondary">{pyramidLevels}</Badge>
                 </label>
-                <input
-                  type="range"
+                <Slider
                   min={1}
                   max={8}
-                  value={pyramidLevels}
-                  onChange={(e) => setPyramidLevels(+e.target.value)}
-                  className="w-full accent-[var(--color-accent)]"
+                  step={1}
+                  value={[pyramidLevels]}
+                  onValueChange={([v]) => setPyramidLevels(v)}
                 />
               </div>
             </>
@@ -166,68 +190,70 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
 
           {mode === 'heartrate' && (
             <div>
-              <label className="block text-[0.65rem] text-[var(--color-text-secondary)] uppercase mb-1">
+              <label className="block text-xs font-medium text-muted-foreground mb-2">
                 rPPG Method
               </label>
-              <div className="flex flex-wrap gap-2">
-                {RPPG_METHODS.map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setRppgMethod(m)}
-                    className={`btn-secondary text-[0.6rem] ${rppgMethod === m ? '!border-[var(--color-accent)] !text-[var(--color-accent)]' : ''}`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
+              <Select value={rppgMethod} onValueChange={setRppgMethod}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RPPG_METHODS.map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
           {mode === 'realtime' && (
             <>
               <div>
-                <label className="block text-[0.65rem] text-[var(--color-text-secondary)] uppercase mb-1">
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
                   pyVHR Method
                 </label>
-                <div className="flex flex-wrap gap-2">
-                  {PYVHR_METHODS.map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setPyvhrMethod(m)}
-                      className={`btn-secondary text-[0.6rem] ${pyvhrMethod === m ? '!border-[var(--color-accent)] !text-[var(--color-accent)]' : ''}`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
+                <Select value={pyvhrMethod} onValueChange={setPyvhrMethod}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PYVHR_METHODS.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <label className="block text-[0.65rem] text-[var(--color-text-secondary)] uppercase mb-1">
-                  Window Size: {winsize}s
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
+                  Window Size: <Badge variant="secondary">{winsize}s</Badge>
                 </label>
-                <input
-                  type="range"
+                <Slider
                   min={2}
                   max={15}
-                  value={winsize}
-                  onChange={(e) => setWinsize(+e.target.value)}
-                  className="w-full accent-[var(--color-accent)]"
+                  step={1}
+                  value={[winsize]}
+                  onValueChange={([v]) => setWinsize(v)}
                 />
               </div>
             </>
           )}
 
           {mode === 'audio' && (
-            <div className="text-[0.7rem] text-[var(--color-text-secondary)] p-3 border border-[var(--color-warning)] border-opacity-30 rounded bg-[var(--color-warning)] bg-opacity-5">
-              <span className="text-[var(--color-warning)]">&#9888;</span> Visual-Mic works best with high-speed video (&gt;1000fps). Standard 30fps video will only recover very low frequencies. Results are educational/demonstrative.
-            </div>
+            <Card className="border-amber-200 bg-amber-50">
+              <CardContent className="flex items-start gap-2 py-3 text-xs text-amber-800">
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <span>
+                  Visual-Mic works best with high-speed video (&gt;1000fps). Standard 30fps video will only recover very low frequencies. Results are educational/demonstrative.
+                </span>
+              </CardContent>
+            </Card>
           )}
 
-          <button onClick={handleSubmit} className="btn-primary w-full mt-4">
+          <Button onClick={handleSubmit} className="w-full">
             Process
-          </button>
-        </div>
-      </div>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

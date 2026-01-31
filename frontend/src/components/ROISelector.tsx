@@ -1,5 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { ROI } from '../types';
+import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
+import { Button } from './ui/button';
+import { Crosshair } from 'lucide-react';
 
 interface Props {
   videoFile: File;
@@ -75,7 +78,7 @@ export function ROISelector({ videoFile, onROISelect, onSkip }: Props) {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.drawImage(video, 0, 0);
-      ctx.strokeStyle = '#00ff88';
+      ctx.strokeStyle = '#0ea5e9';
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 5]);
       ctx.strokeRect(start.x, start.y, coords.x - start.x, coords.y - start.y);
@@ -98,44 +101,45 @@ export function ROISelector({ videoFile, onROISelect, onSkip }: Props) {
 
   return (
     <div className="max-w-xl mx-auto p-4">
-      <div className="panel">
-        <div className="panel-header">
-          <span className="text-[var(--color-accent)]">&#9635;</span>
-          Select Region of Interest
-        </div>
-        <div className="p-4">
-          <div className="text-[0.7rem] text-[var(--color-text-secondary)] mb-3">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Crosshair className="h-4 w-4 text-primary" />
+            Select Region of Interest
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
             Click and drag to select the region to analyze. For color magnification, select the skin area. For audio recovery, select the vibrating object.
-          </div>
-          <div className="relative">
+          </p>
+          <div className="dark-panel">
             <video ref={videoRef} className="hidden" muted preload="auto" />
             <canvas
               ref={canvasRef}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
-              className="w-full cursor-crosshair rounded border border-[var(--color-border)]"
+              className="w-full cursor-crosshair rounded"
             />
           </div>
           {roi && (
-            <div className="mt-2 text-[0.6rem] text-[var(--color-text-dim)] font-mono">
+            <div className="text-xs text-muted-foreground font-mono">
               ROI: x={roi.x} y={roi.y} w={roi.w} h={roi.h}
             </div>
           )}
-          <div className="flex gap-2 mt-3">
-            <button
+          <div className="flex gap-2">
+            <Button
               onClick={() => roi && onROISelect(roi)}
               disabled={!roi}
-              className="btn-primary"
             >
               Confirm ROI
-            </button>
-            <button onClick={onSkip} className="btn-secondary">
+            </Button>
+            <Button variant="outline" onClick={onSkip}>
               Skip (Full Frame)
-            </button>
+            </Button>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

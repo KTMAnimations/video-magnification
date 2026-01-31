@@ -4,8 +4,7 @@ import { MODE_CONFIGS } from './types';
 import { processMotion, processColor, processHeartRate, processRealtime, recoverAudio } from './api';
 import { useBackendHealth } from './hooks/useBackendHealth';
 import { Header } from './components/Header';
-import { Sidebar } from './components/Sidebar';
-import { StatusBar } from './components/StatusBar';
+import { StepIndicator } from './components/StepIndicator';
 import { VideoUploader } from './components/VideoUploader';
 import { ConfigPanel } from './components/ConfigPanel';
 import { ProcessingIndicator } from './components/ProcessingIndicator';
@@ -14,10 +13,21 @@ import { WebcamPanel } from './components/WebcamPanel';
 import { ROISelector } from './components/ROISelector';
 import { ToastContainer } from './components/Toast';
 import { showToast } from './toast';
-import './App.css';
+import { Tabs, TabsList, TabsTrigger } from './components/ui/tabs';
+import { Move, Palette, HeartPulse, Radio, AudioLines } from 'lucide-react';
+
+const ICON_MAP: Record<string, React.ReactNode> = {
+  Move: <Move className="h-4 w-4" />,
+  Palette: <Palette className="h-4 w-4" />,
+  HeartPulse: <HeartPulse className="h-4 w-4" />,
+  Radio: <Radio className="h-4 w-4" />,
+  AudioLines: <AudioLines className="h-4 w-4" />,
+};
+
+const MODES: Mode[] = ['motion', 'color', 'heartrate', 'realtime', 'audio'];
 
 function App() {
-  const { health, loading } = useBackendHealth();
+  const { health } = useBackendHealth();
   const [mode, setMode] = useState<Mode>('motion');
   const [stage, setStage] = useState<Stage>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -78,6 +88,7 @@ function App() {
               file,
               typeof params.magnification === 'number' ? params.magnification : Number(params.magnification),
               typeof params.mode === 'string' ? params.mode : 'static',
+              typeof params.maxFrames === 'number' ? params.maxFrames : (params.maxFrames ? Number(params.maxFrames) : undefined),
             );
             break;
           case 'color':
@@ -168,15 +179,41 @@ function App() {
   };
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen flex flex-col bg-background">
       <Header health={health} />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar activeMode={mode} onModeChange={handleModeChange} health={health} />
-        <main className="flex-1 overflow-y-auto bg-[var(--color-bg-primary)]">
-          {renderMain()}
-        </main>
+
+      {/* Mode tabs */}
+      <div className="bg-card border-b px-4">
+        <Tabs value={mode} onValueChange={(v) => handleModeChange(v as Mode)}>
+          <TabsList className="h-10 bg-transparent gap-1 p-0">
+            {MODES.map((m) => {
+              const config = MODE_CONFIGS[m];
+              const backend = health?.backends?.[config.backendKey];
+              const available = backend?.available ?? false;
+
+              return (
+                <TabsTrigger
+                  key={m}
+                  value={m}
+                  disabled={!available && !!health}
+                  className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary gap-1.5 text-xs px-3"
+                  title={!available && health ? `${config.label} backend unavailable` : config.description}
+                >
+                  {ICON_MAP[config.icon]}
+                  {config.label}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </Tabs>
       </div>
-      <StatusBar health={health} loading={loading} />
+
+      <StepIndicator currentStage={stage} />
+
+      <main className="flex-1 overflow-y-auto">
+        {renderMain()}
+      </main>
+
       <ToastContainer />
     </div>
   );

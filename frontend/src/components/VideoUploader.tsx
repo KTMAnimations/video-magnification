@@ -1,4 +1,7 @@
 import { useRef, useState, useCallback } from 'react';
+import { Card, CardContent } from './ui/card';
+import { Button } from './ui/button';
+import { Upload, Camera, CameraOff } from 'lucide-react';
 
 interface Props {
   onFileSelect: (file: File) => void;
@@ -37,46 +40,49 @@ export function VideoUploader({ onFileSelect, onCameraToggle, cameraActive, show
 
   return (
     <div className="flex flex-col items-center gap-4 p-6">
-      {/* Drop zone */}
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
-        className={`w-full max-w-xl border-2 border-dashed rounded cursor-pointer transition-all flex flex-col items-center justify-center py-12 px-6 ${
-          dragOver
-            ? 'border-[var(--color-accent)] bg-[var(--color-accent-glow)]'
-            : 'border-[var(--color-border-bright)] hover:border-[var(--color-text-dim)]'
+      <Card
+        className={`w-full max-w-xl border-2 border-dashed cursor-pointer transition-colors ${
+          dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-muted-foreground/50'
         }`}
       >
-        {preview ? (
-          <div className="w-full">
-            <video
-              src={preview}
-              className="max-h-48 mx-auto rounded"
-              controls
-              muted
-            />
-            <div className="flex justify-between mt-2 text-[0.65rem] text-[var(--color-text-dim)]">
-              <span>{fileInfo?.name}</span>
-              <span>{fileInfo?.size}</span>
+        <CardContent
+          className="flex flex-col items-center justify-center py-12 px-6"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+        >
+          {preview ? (
+            <div className="w-full">
+              <div className="dark-panel-deep p-2">
+                <video
+                  src={preview}
+                  className="max-h-48 mx-auto rounded"
+                  controls
+                  muted
+                />
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                <span>{fileInfo?.name}</span>
+                <span>{fileInfo?.size}</span>
+              </div>
             </div>
-          </div>
-        ) : (
-          <>
-            <div className="text-3xl text-[var(--color-text-dim)] mb-2">&#9655;</div>
-            <div className="text-[0.75rem] text-[var(--color-text-secondary)]">
-              Drop video file here or click to browse
-            </div>
-            <div className="text-[0.6rem] text-[var(--color-text-dim)] mt-1">
-              Any format OpenCV supports (mp4, avi, mov, ...)
-            </div>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <Upload className="h-10 w-10 text-muted-foreground/50 mb-3" />
+              <div className="text-sm text-foreground">
+                Drop video file here or click to browse
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Any format OpenCV supports (mp4, avi, mov, ...)
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <input
         ref={inputRef}
@@ -89,14 +95,20 @@ export function VideoUploader({ onFileSelect, onCameraToggle, cameraActive, show
         }}
       />
 
-      {/* Camera toggle (real-time mode only) */}
       {showCameraButton && (
-        <button onClick={onCameraToggle} className="btn-secondary flex items-center gap-2">
-          <span className={cameraActive ? 'text-[var(--color-accent)]' : ''}>
-            &#9673;
-          </span>
-          {cameraActive ? 'Stop Camera' : 'Use Camera'}
-        </button>
+        <Button variant="outline" onClick={onCameraToggle} className="gap-2">
+          {cameraActive ? (
+            <>
+              <CameraOff className="h-4 w-4" />
+              Stop Camera
+            </>
+          ) : (
+            <>
+              <Camera className="h-4 w-4" />
+              Use Camera
+            </>
+          )}
+        </Button>
       )}
     </div>
   );

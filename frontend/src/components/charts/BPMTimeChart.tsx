@@ -1,4 +1,6 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, ReferenceLine } from 'recharts';
+import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
+import { Badge } from '../ui/badge';
 
 interface Props {
   bpmValues: number[];
@@ -15,52 +17,57 @@ export function BPMTimeChart({ bpmValues, times }: Props) {
     : 0;
 
   return (
-    <div className="panel">
-      <div className="panel-header">
-        <span style={{ color: 'var(--color-heart)' }}>&#9829;</span>
-        BPM Over Time
-        <span className="ml-auto text-[var(--color-text-dim)]">avg: {mean}</span>
-      </div>
-      <div className="p-2" style={{ height: 200 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-            <XAxis
-              dataKey="time"
-              tick={{ fill: 'var(--color-text-dim)', fontSize: 10 }}
-              axisLine={{ stroke: 'var(--color-border)' }}
-              tickLine={false}
-              label={{ value: 's', position: 'insideBottomRight', fill: 'var(--color-text-dim)', fontSize: 10 }}
-            />
-            <YAxis
-              tick={{ fill: 'var(--color-text-dim)', fontSize: 10 }}
-              axisLine={{ stroke: 'var(--color-border)' }}
-              tickLine={false}
-              width={40}
-              domain={['auto', 'auto']}
-            />
-            <Tooltip
-              contentStyle={{
-                background: 'var(--color-bg-panel)',
-                border: '1px solid var(--color-border)',
-                color: 'var(--color-text-primary)',
-                fontSize: 11,
-                fontFamily: 'var(--font-mono)',
-              }}
-              formatter={(v) => [`${v} BPM`, 'Heart Rate']}
-            />
-            <ReferenceLine y={mean} stroke="var(--color-heart)" strokeDasharray="5 5" strokeOpacity={0.5} />
-            <Line
-              type="monotone"
-              dataKey="bpm"
-              stroke="var(--color-heart)"
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="text-rose-500">&#9829;</span>
+            BPM Over Time
+          </CardTitle>
+          <Badge variant="secondary" className="text-xs">avg: {mean}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="dark-panel" style={{ height: 200 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis
+                dataKey="time"
+                tick={{ fill: '#94a3b8', fontSize: 10 }}
+                axisLine={{ stroke: '#334155' }}
+                tickLine={false}
+                label={{ value: 's', position: 'insideBottomRight', fill: '#94a3b8', fontSize: 10 }}
+              />
+              <YAxis
+                tick={{ fill: '#94a3b8', fontSize: 10 }}
+                axisLine={{ stroke: '#334155' }}
+                tickLine={false}
+                width={40}
+                domain={['auto', 'auto']}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: '#1e293b',
+                  border: '1px solid #334155',
+                  color: '#e2e8f0',
+                  fontSize: 11,
+                }}
+                formatter={(v) => [`${v} BPM`, 'Heart Rate']}
+              />
+              <ReferenceLine y={mean} stroke="#f43f5e" strokeDasharray="5 5" strokeOpacity={0.5} />
+              <Line
+                type="monotone"
+                dataKey="bpm"
+                stroke="#f43f5e"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

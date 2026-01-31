@@ -93,6 +93,7 @@ class STBVMMService(BaseService):
         video_path: str,
         magnification: float = 20.0,
         mode: str = "static",
+        max_frames: int = 0,
     ) -> ProcessingResult:
         try:
             import torch
@@ -104,59 +105,95 @@ class STBVMMService(BaseService):
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-            frames = []
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                frames.append(frame)
-            cap.release()
-
-            if len(frames) < 2:
-                return ProcessingResult(success=False, error="Video too short (need at least 2 frames).")
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
             # Model requires dimensions divisible by 64 (8x conv stride × 8 window size).
             # Resize to nearest multiples of 64, process, then resize output back.
             proc_h = ((height + 63) // 64) * 64
             proc_w = ((width + 63) // 64) * 64
-            # Cap at reasonable size to avoid OOM
-            proc_h = min(proc_h, 384)
-            proc_w = min(proc_w, 384)
+            # Cap at reasonable size to avoid OOM / very slow inference on CPU.
+            max_side = int(os.environ.get("VMAG_STBVMM_MAX_SIDE", "192"))
+            if max_side < 64:
+                max_side = 64
+            proc_h = min(proc_h, max_side)
+            proc_w = min(proc_w, max_side)
+
+            frames = []
+            hit_frame_limit = False
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                frames.append(frame)
+                if max_frames > 0 and len(frames) >= max_frames:
+                    hit_frame_limit = True
+                    break
+            cap.release()
+
+            warnings = []
+            if max_frames > 0 and hit_frame_limit:
+                if total_frames:
+                    warnings.append(f"Fast preview: processed first {max_frames} frames out of {total_frames}.")
+                else:
+                    warnings.append(f"Fast preview: processed first {max_frames} frames.")
+            if proc_h < height or proc_w < width:
+                warnings.append(
+                    f"Downscaled to {proc_w}x{proc_h} for faster processing "
+                    f"(set VMAG_STBVMM_MAX_SIDE to adjust)."
+                )
+
+            if len(frames) < 2:
+                return ProcessingResult(success=False, error="Video too short (need at least 2 frames).")
 
             out_name = f"{uuid.uuid4().hex}.mp4"
             out_path = PROCESSED_DIR / out_name
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            # Prefer H.264 (avc1) for in-browser playback (Chrome often can't decode mp4v).
+            fourcc = cv2.VideoWriter_fourcc(*"avc1")
             writer = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
-
-            # Magnification factor as tensor
-            mag_factor = torch.tensor(magnification).float()
-            mag_factor = mag_factor.unsqueeze(0).unsqueeze(0).unsqueeze(0).unsqueeze(0)
-            mag_factor = mag_factor.to(self._device)
+            if not writer.isOpened():
+                warnings.append("H.264 encoder unavailable; falling back to mp4v (may not play in-browser).")
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
+            if not writer.isOpened():
+                return ProcessingResult(success=False, error="Failed to initialize video writer.", warnings=warnings)
 
             ref_frame = frames[0]  # reference for static mode
+            batch_size = int(os.environ.get("VMAG_STBVMM_BATCH_SIZE", "8"))
+            if batch_size < 1:
+                batch_size = 1
+
+            ref_t = None
+            if mode == "static":
+                ref_t = self._preprocess(ref_frame, proc_h, proc_w)
 
             with torch.no_grad():
-                for i in range(1, len(frames)):
-                    if mode == "static":
-                        frame_a = ref_frame
-                    else:  # dynamic
-                        frame_a = frames[i - 1]
-                    frame_b = frames[i]
+                for start in range(1, len(frames), batch_size):
+                    end = min(len(frames), start + batch_size)
+                    bs = end - start
 
-                    # Preprocess: BGR→RGB, resize, normalize to [-1, 1]
-                    a_t = self._preprocess(frame_a, proc_h, proc_w).to(self._device)
-                    b_t = self._preprocess(frame_b, proc_h, proc_w).to(self._device)
+                    if mode == "static" and ref_t is not None:
+                        a_batch = ref_t.expand(bs, -1, -1, -1).contiguous().to(self._device)
+                    else:
+                        a_tensors = []
+                        for i in range(start, end):
+                            a_tensors.append(self._preprocess(frames[i - 1], proc_h, proc_w))
+                        a_batch = torch.cat(a_tensors, dim=0).to(self._device)
 
-                    # Model takes (frame_a, frame_b, mag_factor) separately
-                    y_hat, _, _, _ = self._model(a_t, b_t, mag_factor)
+                    b_tensors = []
+                    for i in range(start, end):
+                        b_tensors.append(self._preprocess(frames[i], proc_h, proc_w))
+                    b_batch = torch.cat(b_tensors, dim=0).to(self._device)
 
-                    # Denormalize and resize back to original dims
-                    result_frame = self._postprocess(y_hat, height, width)
-                    writer.write(result_frame)
+                    mag_batch = torch.full((bs, 1, 1, 1), float(magnification), device=self._device, dtype=torch.float32)
+
+                    y_hat, _, _, _ = self._model(a_batch, b_batch, mag_batch)
+
+                    for j in range(bs):
+                        result_frame = self._postprocess(y_hat[j : j + 1], height, width)
+                        writer.write(result_frame)
 
             writer.release()
-            return ProcessingResult(success=True, output_path=out_name)
+            return ProcessingResult(success=True, output_path=out_name, warnings=warnings)
 
         except Exception as e:
             return ProcessingResult(

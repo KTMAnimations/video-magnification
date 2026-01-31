@@ -36,6 +36,17 @@ else
     echo "pyVHR already cloned."
 fi
 
+# Patch pyVHR to be importable in a lightweight server environment (optional deps).
+if [ -d "backends/pyVHR/.git" ] && [ -f "scripts/pyvhr.patch" ]; then
+    echo "Patching pyVHR (server-friendly imports)..."
+    if git -C backends/pyVHR apply --check "../../scripts/pyvhr.patch" >/dev/null 2>&1; then
+        git -C backends/pyVHR apply "../../scripts/pyvhr.patch"
+        echo "pyVHR patch applied."
+    else
+        echo "pyVHR patch not applied (already patched or upstream has diverged)."
+    fi
+fi
+
 # Visual-Mic
 if [ ! -d "backends/Visual-Mic" ]; then
     echo "Cloning Visual-Mic..."

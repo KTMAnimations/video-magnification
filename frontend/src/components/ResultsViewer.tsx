@@ -1,8 +1,13 @@
 import type { Mode, ProcessingResponse } from '../types';
+import { resolveBackendUrl } from '../api';
 import { BVPChart } from './charts/BVPChart';
 import { BPMTimeChart } from './charts/BPMTimeChart';
 import { HRVFrequencyChart } from './charts/HRVFrequencyChart';
 import { AudioWaveform } from './charts/AudioWaveform';
+import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import { AlertTriangle, ArrowLeft, Download, XCircle, Play } from 'lucide-react';
 
 function isNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
@@ -24,18 +29,21 @@ export function ResultsViewer({ mode, result, originalFile, onReset }: Props) {
   if (!result.success) {
     return (
       <div className="p-6">
-        <div className="panel max-w-xl mx-auto">
-          <div className="panel-header">
-            <span className="text-[var(--color-danger)]">&#10005;</span>
-            Error
-          </div>
-          <div className="p-4">
-            <div className="text-[0.75rem] text-[var(--color-danger)] mb-3">{result.error}</div>
-            <button onClick={onReset} className="btn-secondary">
-              &#8592; Try Again
-            </button>
-          </div>
-        </div>
+        <Card className="max-w-xl mx-auto border-destructive/30">
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2 text-destructive">
+              <XCircle className="h-4 w-4" />
+              Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-sm text-destructive mb-4">{result.error}</div>
+            <Button variant="outline" size="sm" onClick={onReset}>
+              <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -44,17 +52,20 @@ export function ResultsViewer({ mode, result, originalFile, onReset }: Props) {
     <div className="p-4 space-y-4">
       {/* Warnings */}
       {result.warnings.length > 0 && (
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto space-y-2">
           {result.warnings.map((w, i) => (
-            <div key={i} className="text-[0.7rem] text-[var(--color-warning)] p-2 border border-[var(--color-warning)] border-opacity-30 rounded bg-[var(--color-warning)] bg-opacity-5 mb-2">
-              <span className="mr-1">&#9888;</span> {w}
-            </div>
+            <Card key={i} className="border-amber-200 bg-amber-50">
+              <CardContent className="flex items-start gap-2 py-3 text-xs text-amber-800">
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <span>{w}</span>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
 
       {/* Processing time */}
-      <div className="max-w-4xl mx-auto text-right text-[0.6rem] text-[var(--color-text-dim)]">
+      <div className="max-w-4xl mx-auto text-right text-xs text-muted-foreground">
         Processed in {result.processing_time_seconds.toFixed(1)}s
       </div>
 
@@ -71,9 +82,10 @@ export function ResultsViewer({ mode, result, originalFile, onReset }: Props) {
 
       {/* Back button */}
       <div className="max-w-4xl mx-auto pt-2">
-        <button onClick={onReset} className="btn-secondary">
-          &#8592; Process Another
-        </button>
+        <Button variant="outline" size="sm" onClick={onReset}>
+          <ArrowLeft className="h-3.5 w-3.5 mr-1.5" />
+          Process Another
+        </Button>
       </div>
     </div>
   );
@@ -81,51 +93,56 @@ export function ResultsViewer({ mode, result, originalFile, onReset }: Props) {
 
 function VideoComparisonResult({ result, originalFile }: { result: ProcessingResponse; originalFile?: File }) {
   const originalUrl = originalFile ? URL.createObjectURL(originalFile) : null;
-  const processedUrl = result.output_url;
+  const processedUrl = result.output_url ? resolveBackendUrl(result.output_url) : undefined;
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="panel">
-        <div className="panel-header">
-          <span className="text-[var(--color-accent)]">&#9654;</span>
-          Video Comparison
-        </div>
-        <div className="p-4 grid grid-cols-2 gap-4">
-          {/* Original */}
-          <div>
-            <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase mb-1">Original</div>
-            {originalUrl ? (
-              <video src={originalUrl} controls className="w-full rounded border border-[var(--color-border)]" />
-            ) : (
-              <div className="aspect-video bg-[var(--color-bg-secondary)] rounded flex items-center justify-center text-[var(--color-text-dim)] text-[0.7rem]">
-                No original
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Play className="h-4 w-4 text-primary" />
+            Video Comparison
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            {/* Original */}
+            <div>
+              <div className="text-xs text-muted-foreground mb-1.5">Original</div>
+              <div className="dark-panel-deep p-1">
+                {originalUrl ? (
+                  <video src={originalUrl} controls className="w-full rounded" />
+                ) : (
+                  <div className="aspect-video rounded flex items-center justify-center text-slate-400 text-xs">
+                    No original
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          {/* Processed */}
-          <div>
-            <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase mb-1">Magnified</div>
-            {processedUrl ? (
-              <video src={processedUrl} controls className="w-full rounded border border-[var(--color-accent)] border-opacity-30" />
-            ) : (
-              <div className="aspect-video bg-[var(--color-bg-secondary)] rounded flex items-center justify-center text-[var(--color-text-dim)] text-[0.7rem]">
-                No output
+            </div>
+            {/* Processed */}
+            <div>
+              <div className="text-xs text-muted-foreground mb-1.5">Magnified</div>
+              <div className="dark-panel-deep p-1">
+                {processedUrl ? (
+                  <video src={processedUrl} controls className="w-full rounded" />
+                ) : (
+                  <div className="aspect-video rounded flex items-center justify-center text-slate-400 text-xs">
+                    No output
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
-        {processedUrl && (
-          <div className="px-4 pb-3">
-            <a
-              href={processedUrl}
-              download
-              className="btn-secondary inline-flex items-center gap-1 text-[0.65rem]"
-            >
-              &#8615; Download Magnified Video
-            </a>
-          </div>
-        )}
-      </div>
+          {processedUrl && (
+            <Button variant="outline" size="sm" asChild>
+              <a href={processedUrl} download className="gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                Download Magnified Video
+              </a>
+            </Button>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -155,68 +172,80 @@ function VitalsResult({ result }: { result: ProcessingResponse; mode: Mode }) {
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       {/* Big BPM readout */}
-      <div className="panel">
-        <div className="panel-header">
-          <span style={{ color: 'var(--color-heart)' }}>&#9829;</span>
-          Heart Rate
-          {method && <span className="ml-auto text-[var(--color-text-dim)]">{method}</span>}
-        </div>
-        <div className="p-6 flex items-center justify-center gap-6">
-          <div className="text-center">
-            <div className="text-5xl font-bold" style={{ color: 'var(--color-heart)' }}>
-              {Math.round(singleBpm)}
-            </div>
-            <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase mt-1">BPM</div>
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <span className="text-rose-500">&#9829;</span>
+              Heart Rate
+            </CardTitle>
+            {method && (
+              <Badge variant="secondary" className="text-xs">{method}</Badge>
+            )}
           </div>
-          {confidence !== undefined && (
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center gap-8 py-4">
             <div className="text-center">
-              <div className="text-2xl font-bold text-[var(--color-text-secondary)]">
-                {(confidence * 100).toFixed(0)}%
+              <div className="text-5xl font-bold text-rose-500">
+                {Math.round(singleBpm)}
               </div>
-              <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase mt-1">Confidence</div>
+              <div className="text-xs text-muted-foreground mt-1">BPM</div>
             </div>
-          )}
-          {fps !== undefined && (
-            <div className="text-center">
-              <div className="text-lg text-[var(--color-text-secondary)]">{fps.toFixed(0)}</div>
-              <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase mt-1">FPS</div>
-            </div>
-          )}
-          {nFrames !== undefined && (
-            <div className="text-center">
-              <div className="text-lg text-[var(--color-text-secondary)]">{nFrames}</div>
-              <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase mt-1">Frames</div>
-            </div>
-          )}
-        </div>
-      </div>
+            {confidence !== undefined && (
+              <div className="text-center">
+                <div className="text-2xl font-semibold text-foreground">
+                  {(confidence * 100).toFixed(0)}%
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">Confidence</div>
+              </div>
+            )}
+            {fps !== undefined && (
+              <div className="text-center">
+                <div className="text-lg text-foreground">{fps.toFixed(0)}</div>
+                <div className="text-xs text-muted-foreground mt-1">FPS</div>
+              </div>
+            )}
+            {nFrames !== undefined && (
+              <div className="text-center">
+                <div className="text-lg text-foreground">{nFrames}</div>
+                <div className="text-xs text-muted-foreground mt-1">Frames</div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* HRV metrics (from pyVHR) */}
+      {/* HRV metrics */}
       {hrvSdnn !== undefined && hrvRmssd !== undefined && hrvLfPower !== undefined && hrvLfHfRatio !== undefined && (
-        <div className="panel">
-          <div className="panel-header">
-            <span className="text-[var(--color-accent)]">&#9632;</span>
-            HRV Metrics
-          </div>
-          <div className="p-4 grid grid-cols-4 gap-4 text-center">
-            <div>
-              <div className="text-xl font-bold text-[var(--color-accent)]">{hrvSdnn.toFixed(1)}</div>
-              <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase">SDNN (ms)</div>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <span className="text-teal-500">&#9632;</span>
+              HRV Metrics
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-4 gap-4 text-center py-2">
+              <div>
+                <div className="text-xl font-bold text-teal-600">{hrvSdnn.toFixed(1)}</div>
+                <div className="text-xs text-muted-foreground">SDNN (ms)</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-teal-600">{hrvRmssd.toFixed(1)}</div>
+                <div className="text-xs text-muted-foreground">RMSSD (ms)</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-teal-600">{hrvLfPower.toFixed(1)}</div>
+                <div className="text-xs text-muted-foreground">LF Power</div>
+              </div>
+              <div>
+                <div className="text-xl font-bold text-teal-600">{hrvLfHfRatio.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground">LF/HF Ratio</div>
+              </div>
             </div>
-            <div>
-              <div className="text-xl font-bold text-[var(--color-accent)]">{hrvRmssd.toFixed(1)}</div>
-              <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase">RMSSD (ms)</div>
-            </div>
-            <div>
-              <div className="text-xl font-bold text-[var(--color-accent)]">{hrvLfPower.toFixed(1)}</div>
-              <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase">LF Power</div>
-            </div>
-            <div>
-              <div className="text-xl font-bold text-[var(--color-accent)]">{hrvLfHfRatio.toFixed(2)}</div>
-              <div className="text-[0.6rem] text-[var(--color-text-dim)] uppercase">LF/HF Ratio</div>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Charts */}
@@ -239,36 +268,38 @@ function AudioResult({ result }: { result: ProcessingResponse }) {
   const nFrames = isNumber(data.n_frames) ? data.n_frames : undefined;
   const durationSeconds = isNumber(data.duration_seconds) ? data.duration_seconds : undefined;
   const maxRecoverable = isNumber(data.max_recoverable_freq_hz) ? data.max_recoverable_freq_hz : undefined;
+  const audioUrl = result.output_url ? resolveBackendUrl(result.output_url) : undefined;
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
-      {/* Audio player */}
       {result.output_url && (
-        <div className="panel">
-          <div className="panel-header">
-            <span style={{ color: 'var(--color-audio)' }}>&#8767;</span>
-            Recovered Audio
-          </div>
-          <div className="p-4">
-            <audio controls src={result.output_url} className="w-full" />
-            <div className="flex gap-4 mt-3 text-[0.65rem] text-[var(--color-text-dim)]">
-              {fps !== undefined && <span>Source FPS: {fps.toFixed(0)}</span>}
-              {nFrames !== undefined && <span>Frames: {nFrames}</span>}
-              {durationSeconds !== undefined && <span>Duration: {durationSeconds.toFixed(1)}s</span>}
-              {maxRecoverable !== undefined && <span>Max freq: {maxRecoverable.toFixed(1)} Hz</span>}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <span className="text-purple-500">&#8767;</span>
+              Recovered Audio
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="dark-panel p-3">
+              <audio controls src={audioUrl} className="w-full" />
             </div>
-            <a
-              href={result.output_url}
-              download
-              className="btn-secondary inline-flex items-center gap-1 text-[0.65rem] mt-2"
-            >
-              &#8615; Download Audio
-            </a>
-          </div>
-        </div>
+            <div className="flex flex-wrap gap-2">
+              {fps !== undefined && <Badge variant="secondary">FPS: {fps.toFixed(0)}</Badge>}
+              {nFrames !== undefined && <Badge variant="secondary">Frames: {nFrames}</Badge>}
+              {durationSeconds !== undefined && <Badge variant="secondary">Duration: {durationSeconds.toFixed(1)}s</Badge>}
+              {maxRecoverable !== undefined && <Badge variant="secondary">Max freq: {maxRecoverable.toFixed(1)} Hz</Badge>}
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <a href={audioUrl} download className="gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                Download Audio
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Waveform chart */}
       {waveform.length > 0 && (
         <AudioWaveform waveform={waveform} durationSeconds={durationSeconds} />
       )}

@@ -15,6 +15,7 @@ async def magnify_motion(
     video: UploadFile = File(...),
     magnification: float = Form(20.0),
     mode: str = Form("static"),
+    max_frames: int = Form(0),
 ):
     """Motion magnification using STB-VMM."""
     t0 = time.time()
@@ -24,7 +25,12 @@ async def magnify_motion(
         return ProcessingResponse(
             success=False, error="STB-VMM backend is not available."
         )
-    result = svc.process(str(path), magnification=magnification, mode=mode)
+    result = svc.process(
+        str(path),
+        magnification=magnification,
+        mode=mode,
+        max_frames=max_frames,
+    )
     result.processing_time_seconds = time.time() - t0
     return ProcessingResponse(
         success=result.success,

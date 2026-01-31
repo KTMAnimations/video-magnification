@@ -78,12 +78,22 @@ async def vitals_websocket(websocket: WebSocket):
         return
 
     frame_buffer: List[bytes] = []
-    MIN_FRAMES = int(os.environ.get("VMAG_VITALS_MIN_FRAMES", "300"))  # ~10s at 30fps
+    MIN_FRAMES = int(os.environ.get("VMAG_VITALS_MIN_FRAMES", "180"))  # ~6s at 30fps
+    PROGRESS_EVERY = int(os.environ.get("VMAG_VITALS_PROGRESS_EVERY_FRAMES", "30"))  # ~1s at 30fps
 
     try:
         while True:
             data = await websocket.receive_bytes()
             frame_buffer.append(data)
+
+            if len(frame_buffer) < MIN_FRAMES and PROGRESS_EVERY > 0 and (len(frame_buffer) % PROGRESS_EVERY == 0):
+                await websocket.send_json(
+                    {
+                        "status": "collecting",
+                        "frames_collected": len(frame_buffer),
+                        "frames_needed": MIN_FRAMES,
+                    }
+                )
 
             if len(frame_buffer) >= MIN_FRAMES:
                 loop = asyncio.get_event_loop()

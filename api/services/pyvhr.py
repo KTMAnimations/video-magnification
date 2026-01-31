@@ -7,17 +7,19 @@ conflicts. When that happens, we fall back to a lightweight rPPG implementation
 using the rPPG-Toolbox unsupervised methods on face ROI frames.
 """
 
-import os
 import tempfile
 import traceback
 from pathlib import Path
 from typing import List
+import sys
 
 import cv2
 import numpy as np
 
 from api.services.base import BaseService, ProcessingResult
 from api.services.rppg import RPPGService
+
+BACKENDS_DIR = Path("backends/pyVHR")
 
 
 class PyVHRService(BaseService):
@@ -36,17 +38,13 @@ class PyVHRService(BaseService):
         return False
 
     def _try_import_pyvhr(self):
-        if os.environ.get("VMAG_ENABLE_PYVHR", "").lower() not in {"1", "true", "yes"}:
-            self._last_error = "pyVHR disabled (set VMAG_ENABLE_PYVHR=1 to enable)"
-            self._pyvhr_checked = True
-            self._pyvhr_pipeline = None
-            return None
-
         if self._pyvhr_checked:
             return self._pyvhr_pipeline
 
         self._pyvhr_checked = True
         try:
+            if str(BACKENDS_DIR) not in sys.path:
+                sys.path.insert(0, str(BACKENDS_DIR))
             from pyVHR.analysis.pipeline import Pipeline  # noqa: F401
             self._pyvhr_pipeline = Pipeline
             self._last_error = None
@@ -73,39 +71,111 @@ class PyVHRService(BaseService):
         method: str = "cpu_POS",
         winsize: int = 5,
     ) -> ProcessingResult:
-        try:
-            Pipeline = self._try_import_pyvhr()
-            if Pipeline is not None:
+        Pipeline = self._try_import_pyvhr()
+
+        if Pipeline is not None:
+            try:
+                cap = cv2.VideoCapture(video_path)
+                fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+                cap.release()
+
                 pipe = Pipeline()
-                bvps, timesES, bpmES = pipe.run_on_video(
+                bvps_win, timesES, bpmES = pipe.run_on_video(
                     video_path,
                     winsize=winsize,
                     roi_approach="holistic",
                     method=method,
                     cuda=False,
+                    verb=False,
                 )
 
-                # Compute HRV metrics from BVP peaks
-                hrv_data = self._compute_hrv(bvps, timesES)
+                # Normalize pyVHR outputs into JSON-friendly primitives.
+                bpm_values: list[float] = []
+                for bpm_win in bpmES:
+                    try:
+                        bpm_arr = np.array(bpm_win, dtype=np.float32).reshape(-1)
+                        if bpm_arr.size:
+                            bpm_values.append(float(np.nanmedian(bpm_arr)))
+                    except Exception:
+                        continue
+
+                bvp_segment: np.ndarray = np.array([], dtype=np.float32)
+                if isinstance(bvps_win, list) and len(bvps_win) > 0:
+                    last_win = bvps_win[-1]
+                    try:
+                        last_arr = np.array(last_win, dtype=np.float32)
+                        if last_arr.ndim == 2 and last_arr.shape[0] > 0:
+                            bvp_segment = np.nanmedian(last_arr, axis=0).astype(np.float32)
+                    except Exception:
+                        bvp_segment = np.array([], dtype=np.float32)
+
+                times_bpm = timesES.tolist() if hasattr(timesES, "tolist") else list(timesES)
+                bpm_mean = float(np.nanmean(bpm_values)) if bpm_values else None
+
+                # Optional confidence/PSD using the same estimator used elsewhere in the app.
+                confidence = None
+                psd_freqs = []
+                psd_power = []
+                bpm_from_psd = None
+                if bvp_segment.size > 0:
+                    rppg = RPPGService()
+                    bpm_psd, conf, pf, pp = rppg._bvp_to_bpm(bvp_segment, fps)  # noqa: SLF001
+                    bpm_from_psd = float(bpm_psd)
+                    confidence = float(conf)
+                    psd_freqs = pf
+                    psd_power = pp
+
+                # Compute HRV metrics from the returned BVP segment.
+                times_samples = (np.arange(bvp_segment.size, dtype=np.float32) / fps).tolist() if bvp_segment.size else []
+                hrv_data = self._compute_hrv([bvp_segment], times_samples) if bvp_segment.size else {}
+
+                # Basic sanity check: if pyVHR returns an out-of-range BPM, fall back.
+                if bpm_mean is not None and (bpm_mean < 40.0 or bpm_mean > 200.0):
+                    fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize)
+                    if fallback.success:
+                        fallback.warnings = (fallback.warnings or []) + [
+                            f"pyVHR returned out-of-range BPM ({bpm_mean:.1f}); using fallback rPPG engine instead."
+                        ]
+                        return fallback
 
                 return ProcessingResult(
                     success=True,
                     data={
-                        "bpm": bpmES.tolist() if hasattr(bpmES, "tolist") else list(bpmES),
-                        "bpm_mean": float(np.nanmean(bpmES)),
-                        "times": timesES.tolist() if hasattr(timesES, "tolist") else list(timesES),
-                        "bvp": bvps[0].tolist() if len(bvps) > 0 and hasattr(bvps[0], "tolist") else [],
+                        "bpm": bpm_values,
+                        "bpm_mean": bpm_mean,
+                        "times": times_bpm,
+                        "bvp": bvp_segment.tolist() if bvp_segment.size else [],
                         "hrv": hrv_data,
                         "method": method,
+                        "confidence": confidence,
+                        "psd_freqs": psd_freqs,
+                        "psd_power": psd_power,
+                        "bpm_psd": bpm_from_psd,
                     },
                 )
+            except Exception as e:
+                # If pyVHR fails on a particular input (no face, low quality, etc),
+                # fall back to the rPPG-Toolbox path instead of failing the endpoint.
+                pyvhr_error = f"{type(e).__name__}: {e}"
+                pyvhr_tb = traceback.format_exc()
 
-            # Fallback implementation (no pyVHR)
-            return self._process_fallback(video_path=video_path, method=method, winsize=winsize)
-        except Exception as e:
-            return ProcessingResult(
-                success=False, error=f"pyVHR processing failed: {e}\n{traceback.format_exc()}"
-            )
+                fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize)
+                if fallback.success:
+                    fallback.warnings = (fallback.warnings or []) + [
+                        f"pyVHR failed for this input; using fallback rPPG engine ({pyvhr_error})"
+                    ]
+                    return fallback
+
+                return ProcessingResult(
+                    success=False,
+                    error=(
+                        f"pyVHR processing failed: {pyvhr_error}\n{pyvhr_tb}\n"
+                        f"Fallback processing also failed: {fallback.error}"
+                    ),
+                )
+
+        # Fallback implementation (no pyVHR)
+        return self._process_fallback(video_path=video_path, method=method, winsize=winsize)
 
     def process_frames(self, jpeg_frames: List[bytes], fps: float) -> ProcessingResult:
         """Process a buffer of JPEG frames (from webcam WebSocket)."""
