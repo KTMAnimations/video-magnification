@@ -19,7 +19,7 @@ const FREQUENCY_PRESETS = [
   { label: 'Tremor', min: 3.0, max: 12.0 },
 ];
 
-const RPPG_METHODS = ['POS_WANG', 'CHROME_DEHAAN', 'ICA_POH', 'GREEN', 'LGI', 'PBV', 'OMIT'];
+const RPPG_METHODS = ['POS_WANG', 'CHROME_DEHAAN', 'ICA_POH', 'GREEN', 'LGI', 'PBV', 'OMIT', 'ALL'];
 const PYVHR_METHODS = ['cpu_POS', 'cpu_CHROM', 'cpu_GREEN', 'cpu_ICA', 'cpu_PCA', 'cpu_LGI', 'cpu_PBV', 'cpu_OMIT', 'cpu_SSR'];
 
 export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
@@ -27,6 +27,7 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
   const [magnification, setMagnification] = useState(20);
   const [motionMode, setMotionMode] = useState('static');
   const [motionFastPreview, setMotionFastPreview] = useState(false);
+  const [motionHighDetail, setMotionHighDetail] = useState(false);
 
   // Color params
   const [freqMin, setFreqMin] = useState(0.75);
@@ -42,7 +43,12 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
   const handleSubmit = () => {
     switch (mode) {
       case 'motion':
-        onSubmit({ magnification, mode: motionMode, maxFrames: motionFastPreview ? 120 : 0 });
+        onSubmit({
+          magnification,
+          mode: motionMode,
+          maxFrames: motionFastPreview ? 120 : 0,
+          maxSide: motionHighDetail ? 640 : 0,
+        });
         break;
       case 'color':
         onSubmit({ freqMin, freqMax, amplification, pyramidLevels });
@@ -112,6 +118,15 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
                   onChange={(e) => setMotionFastPreview(e.target.checked)}
                 />
                 Fast preview (first 120 frames, ~4s @ 30fps)
+              </label>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={motionHighDetail}
+                  onChange={(e) => setMotionHighDetail(e.target.checked)}
+                />
+                High detail (slower, preserves fine features)
               </label>
             </>
           )}
@@ -199,7 +214,7 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
                 </SelectTrigger>
                 <SelectContent>
                   {RPPG_METHODS.map((m) => (
-                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                    <SelectItem key={m} value={m}>{m === 'ALL' ? 'ALL (Compare)' : m}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

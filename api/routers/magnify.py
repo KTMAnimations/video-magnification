@@ -18,6 +18,7 @@ async def magnify_motion(
     magnification: float = Form(20.0),
     mode: str = Form("static"),
     max_frames: int = Form(0),
+    max_side: int = Form(0),
     job_id: str = Form(""),
 ):
     """Motion magnification using STB-VMM."""
@@ -46,6 +47,7 @@ async def magnify_motion(
             magnification=magnification,
             mode=mode,
             max_frames=max_frames,
+            max_side=max_side,
             progress=sink,
         )
     except Exception as e:

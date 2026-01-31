@@ -121,6 +121,7 @@ function App() {
               typeof params.magnification === 'number' ? params.magnification : Number(params.magnification),
               typeof params.mode === 'string' ? params.mode : 'static',
               typeof params.maxFrames === 'number' ? params.maxFrames : (params.maxFrames ? Number(params.maxFrames) : undefined),
+              typeof params.maxSide === 'number' ? params.maxSide : (params.maxSide ? Number(params.maxSide) : undefined),
               {
                 jobId,
                 onUploadProgress: (p) => {

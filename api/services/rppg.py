@@ -15,6 +15,7 @@ from api.services.base import BaseService, ProcessingResult
 from api.progress import ProgressSink
 
 BACKENDS_DIR = Path("backends/rPPG-Toolbox")
+SUPPORTED_METHODS = ["POS_WANG", "CHROME_DEHAAN", "ICA_POH", "GREEN", "LGI", "PBV", "OMIT"]
 
 
 class RPPGService(BaseService):
@@ -50,19 +51,22 @@ class RPPGService(BaseService):
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             cap.release()
 
-            # Call unsupervised method
+            # Run one method or compare all methods.
+            if method == "ALL":
+                return self._process_all(frames_rgb=frames_rgb, fps=float(fps), progress=progress)
+
+            if method not in SUPPORTED_METHODS:
+                return ProcessingResult(success=False, error=f"Unknown method: {method}")
+
             if progress:
                 progress.update(stage="rppg_method", message=f"Running {method}", percent=75.0, force=True)
-            bvp = self._run_method(method, frames_rgb, fps)
+            bvp = self._run_method(method, frames_rgb, float(fps))
             if bvp is None:
-                return ProcessingResult(
-                    success=False, error=f"Method {method} failed."
-                )
+                return ProcessingResult(success=False, error=f"Method {method} failed.")
 
-            # FFT to get BPM
             if progress:
                 progress.update(stage="analyze", message="Estimating BPM", percent=90.0, force=True)
-            bpm, bpm_confidence, psd_freqs, psd_power = self._bvp_to_bpm(bvp, fps)
+            bpm, bpm_confidence, psd_freqs, psd_power = self._bvp_to_bpm(bvp, float(fps))
             if progress:
                 progress.update(stage="analyze", message="Estimating BPM", percent=100.0, force=True)
 
@@ -84,6 +88,73 @@ class RPPGService(BaseService):
                 success=False,
                 error=f"rPPG processing failed: {e}\n{traceback.format_exc()}",
             )
+
+    def _process_all(self, frames_rgb: np.ndarray, fps: float, progress: ProgressSink | None = None) -> ProcessingResult:
+        """Run all supported methods and pick the highest-confidence result.
+
+        Returns the best method's waveforms/PSD in the top-level fields, plus a
+        `compare` array with per-method BPM/confidence summaries.
+        """
+        compare: list[dict] = []
+        best_method: str | None = None
+        best_bvp: np.ndarray | None = None
+        best_bpm: float = 0.0
+        best_conf: float = -1.0
+        best_psd_freqs: list[float] = []
+        best_psd_power: list[float] = []
+
+        total = len(SUPPORTED_METHODS)
+        for idx, m in enumerate(SUPPORTED_METHODS, start=1):
+            if progress:
+                percent = 75.0 + (idx / max(1, total)) * 10.0
+                progress.update(stage="rppg_method", message=f"Running {m} ({idx}/{total})", percent=percent, force=True)
+
+            bvp = self._run_method(m, frames_rgb, fps)
+            if bvp is None:
+                compare.append({"method": m, "ok": False, "error": "method failed"})
+                continue
+
+            bpm, conf, psd_freqs, psd_power = self._bvp_to_bpm(bvp, fps)
+            compare.append(
+                {
+                    "method": m,
+                    "ok": True,
+                    "bpm": float(bpm),
+                    "confidence": float(conf),
+                }
+            )
+
+            # Highest confidence wins; ties break by stable method order.
+            if float(conf) > best_conf:
+                best_conf = float(conf)
+                best_method = m
+                best_bvp = bvp
+                best_bpm = float(bpm)
+                best_psd_freqs = psd_freqs
+                best_psd_power = psd_power
+
+        if best_method is None or best_bvp is None:
+            return ProcessingResult(success=False, error="All rPPG methods failed.", data={"compare": compare})
+
+        if progress:
+            progress.update(stage="analyze", message="Selecting best method", percent=90.0, force=True)
+            progress.update(stage="analyze", message="Done", percent=100.0, force=True)
+
+        return ProcessingResult(
+            success=True,
+            data={
+                "bpm": float(best_bpm),
+                "confidence": float(best_conf),
+                "bvp": best_bvp.tolist(),
+                "method": best_method,
+                "method_requested": "ALL",
+                "fps": float(fps),
+                "n_frames": int(frames_rgb.shape[0]),
+                "psd_freqs": best_psd_freqs,
+                "psd_power": best_psd_power,
+                "compare": compare,
+            },
+        )
 
     def _extract_face_frames(self, video_path: str, progress: ProgressSink | None = None) -> np.ndarray | None:
         """Extract a sequence of face ROI frames (RGB) from a video.

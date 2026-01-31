@@ -184,6 +184,33 @@ def test_heartrate_pos_wang_cartoon_face():
     assert abs(bpm - 72.0) <= 5.0
 
 
+def test_heartrate_all_compare_returns_confidence():
+    frames = _make_pulse_frames(n_frames=300, fps=30, bpm=72.0)
+    mp4 = _write_mp4(frames, fps=30)
+    client = TestClient(app)
+
+    res = client.post(
+        "/vitals/heartrate",
+        files={"video": ("input.mp4", io.BytesIO(_read_file_bytes(mp4)), "video/mp4")},
+        data={"method": "ALL"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    assert payload["data"]["method_requested"] == "ALL"
+
+    compare = payload["data"]["compare"]
+    assert isinstance(compare, list)
+    assert len(compare) >= 3
+    assert {"POS_WANG", "CHROME_DEHAAN", "ICA_POH"}.issubset({row.get("method") for row in compare})
+
+    pos = next(row for row in compare if row.get("method") == "POS_WANG" and row.get("ok") is True)
+    bpm = float(pos["bpm"])
+    assert abs(bpm - 72.0) <= 5.0
+    conf = float(pos["confidence"])
+    assert 0.0 <= conf <= 1.0
+
+
 def test_realtime_vitals_fallback_batch():
     frames = _make_pulse_frames(n_frames=300, fps=30, bpm=72.0)
     mp4 = _write_mp4(frames, fps=30)

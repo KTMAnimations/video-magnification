@@ -159,6 +159,25 @@ function VitalsResult({ result }: { result: ProcessingResponse; mode: Mode }) {
   const fps = isNumber(data.fps) ? data.fps : undefined;
   const nFrames = isNumber(data.n_frames) ? data.n_frames : undefined;
   const method = typeof data.method === 'string' ? data.method : undefined;
+  const compareRows = Array.isArray(data.compare)
+    ? data.compare
+        .map(asRecord)
+        .map((r, i) => ({
+          idx: i,
+          method: typeof r.method === 'string' ? r.method : '',
+          bpm: isNumber(r.bpm) ? r.bpm : undefined,
+          confidence: isNumber(r.confidence) ? r.confidence : undefined,
+          ok: typeof r.ok === 'boolean' ? r.ok : true,
+          error: typeof r.error === 'string' ? r.error : undefined,
+        }))
+        .filter((r) => r.method.length > 0)
+        .sort((a, b) => {
+          const ac = a.confidence ?? -1;
+          const bc = b.confidence ?? -1;
+          if (bc !== ac) return bc - ac;
+          return a.idx - b.idx;
+        })
+    : [];
   const hrvSdnn = isNumber(hrv.sdnn) ? hrv.sdnn : undefined;
   const hrvRmssd = isNumber(hrv.rmssd) ? hrv.rmssd : undefined;
   const hrvLfPower = isNumber(hrv.lf_power) ? hrv.lf_power : undefined;
@@ -179,9 +198,14 @@ function VitalsResult({ result }: { result: ProcessingResponse; mode: Mode }) {
               <span className="text-rose-500">&#9829;</span>
               Heart Rate
             </CardTitle>
-            {method && (
-              <Badge variant="secondary" className="text-xs">{method}</Badge>
-            )}
+            <div className="flex items-center gap-2">
+              {compareRows.length > 0 && (
+                <Badge variant="outline" className="text-xs">Compare</Badge>
+              )}
+              {method && (
+                <Badge variant="secondary" className="text-xs">{method}</Badge>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -215,6 +239,52 @@ function VitalsResult({ result }: { result: ProcessingResponse; mode: Mode }) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Method comparison */}
+      {compareRows.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <span className="text-slate-500">&#8801;</span>
+              Method Comparison
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="grid grid-cols-3 gap-2 text-xs font-medium text-muted-foreground border-b pb-1 px-2">
+              <div>Method</div>
+              <div className="text-right">BPM</div>
+              <div className="text-right">Confidence</div>
+            </div>
+            <div className="space-y-1">
+              {compareRows.map((r) => {
+                const isBest = method !== undefined && r.method === method;
+                return (
+                  <div
+                    key={r.method}
+                    className={`grid grid-cols-3 gap-2 py-1 text-xs items-center px-2 rounded ${isBest ? 'bg-emerald-50/60 dark:bg-emerald-900/20' : ''}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isBest && <Badge variant="secondary" className="text-[10px]">Best</Badge>}
+                      <span className="font-mono truncate">{r.method}</span>
+                      {!r.ok && (
+                        <span className="text-destructive truncate">
+                          {r.error ?? 'failed'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-right tabular-nums">
+                      {r.bpm !== undefined ? r.bpm.toFixed(1) : '—'}
+                    </div>
+                    <div className="text-right tabular-nums">
+                      {r.confidence !== undefined ? `${(r.confidence * 100).toFixed(0)}%` : '—'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* HRV metrics */}
       {hrvSdnn !== undefined && hrvRmssd !== undefined && hrvLfPower !== undefined && hrvLfHfRatio !== undefined && (

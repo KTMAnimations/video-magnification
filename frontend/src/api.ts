@@ -178,6 +178,7 @@ export async function processMotion(
   magnification: number,
   mode: string,
   maxFrames?: number,
+  maxSide?: number,
   opts?: UploadOptions,
 ): Promise<ProcessingResponse> {
   const form = new FormData();
@@ -187,6 +188,9 @@ export async function processMotion(
   if (opts?.jobId) form.append('job_id', opts.jobId);
   if (typeof maxFrames === 'number' && Number.isFinite(maxFrames) && maxFrames > 0) {
     form.append('max_frames', Math.round(maxFrames).toString());
+  }
+  if (typeof maxSide === 'number' && Number.isFinite(maxSide) && maxSide > 0) {
+    form.append('max_side', Math.round(maxSide).toString());
   }
   const payload = (await apiUploadJson('/magnify/motion', form, opts)) as ProcessingResponse;
   return payload;
