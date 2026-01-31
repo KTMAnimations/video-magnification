@@ -1,0 +1,75 @@
+export type Mode = 'motion' | 'color' | 'heartrate' | 'realtime' | 'audio';
+export type Stage = 'upload' | 'configure' | 'processing' | 'results';
+
+export interface BackendInfo {
+  label: string;
+  available: boolean;
+  error: string | null;
+}
+
+export interface HealthData {
+  status: string;
+  backends: Record<string, BackendInfo>;
+}
+
+export interface ProcessingResponse {
+  success: boolean;
+  output_url?: string;
+  data?: Record<string, unknown>;
+  error?: string;
+  warnings: string[];
+  processing_time_seconds: number;
+}
+
+export interface ROI {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface ModeConfig {
+  label: string;
+  description: string;
+  backendKey: string;
+  needsROI: boolean;
+  icon: string;
+}
+
+export const MODE_CONFIGS: Record<Mode, ModeConfig> = {
+  motion: {
+    label: 'Motion',
+    description: 'Amplify subtle motions using STB-VMM neural network',
+    backendKey: 'stbvmm',
+    needsROI: false,
+    icon: '⟪',
+  },
+  color: {
+    label: 'Color',
+    description: 'Eulerian color magnification to reveal blood flow, vibrations',
+    backendKey: 'evm',
+    needsROI: true,
+    icon: '◎',
+  },
+  heartrate: {
+    label: 'Heart Rate',
+    description: 'Extract pulse from face video using rPPG algorithms',
+    backendKey: 'rppg',
+    needsROI: false,
+    icon: '♡',
+  },
+  realtime: {
+    label: 'Real-time',
+    description: 'Live vitals monitoring using pyVHR with webcam',
+    backendKey: 'pyvhr',
+    needsROI: false,
+    icon: '◈',
+  },
+  audio: {
+    label: 'Audio',
+    description: 'Recover sound from subtle visual vibrations',
+    backendKey: 'visualmic',
+    needsROI: true,
+    icon: '∿',
+  },
+};

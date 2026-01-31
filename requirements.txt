@@ -1,0 +1,31 @@
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+websockets>=12.0
+
+# Video / Image processing
+opencv-python-headless>=4.8.0
+numpy>=1.24.0,<2.3
+
+# Signal processing
+scipy>=1.11.0
+
+# Eulerian Video Magnification
+eulerian-magnification>=0.3.0
+
+# PyTorch (MPS auto-detect on Apple Silicon)
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Audio
+soundfile>=0.12.0
+
+# rPPG signal processing
+scikit-image>=0.22.0
+scikit-learn>=1.4.0
+
+# Utilities
+Pillow>=10.0.0
+tqdm>=4.66.0
+pydantic>=2.0.0
