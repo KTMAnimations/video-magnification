@@ -32,7 +32,7 @@ export function useVitalsWebSocket() {
     const primary = `${wsProto}//${window.location.host}/vitals/ws/vitals`;
     if (import.meta.env.DEV) return [primary];
 
-    const fallbacks = [`${wsProto}//localhost:8000/vitals/ws/vitals`, `${wsProto}//127.0.0.1:8000/vitals/ws/vitals`];
+    const fallbacks = [`${wsProto}//localhost:8001/vitals/ws/vitals`, `${wsProto}//127.0.0.1:8001/vitals/ws/vitals`];
     return [primary, ...fallbacks].filter((v, i, arr) => arr.indexOf(v) === i);
   }, []);
 
