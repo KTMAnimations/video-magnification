@@ -12,12 +12,12 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/magnify': 'http://localhost:8000',
-      '/vitals': { target: 'http://localhost:8000', ws: true },
-      '/audio': 'http://localhost:8000',
-      '/health': 'http://localhost:8000',
-      '/files': 'http://localhost:8000',
-      '/test-videos': 'http://localhost:8000',
+      '/magnify': 'http://localhost:8001',
+      '/vitals': { target: 'http://localhost:8001', ws: true },
+      '/audio': 'http://localhost:8001',
+      '/health': 'http://localhost:8001',
+      '/files': 'http://localhost:8001',
+      '/test-videos': 'http://localhost:8001',
     },
   },
 })
