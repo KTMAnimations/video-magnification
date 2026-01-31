@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 
 from api.services.base import BaseService, ProcessingResult
+from api.progress import ProgressSink
 from api.services.rppg import RPPGService
 
 BACKENDS_DIR = Path("backends/pyVHR")
@@ -70,11 +71,14 @@ class PyVHRService(BaseService):
         video_path: str,
         method: str = "cpu_POS",
         winsize: int = 5,
+        progress: ProgressSink | None = None,
     ) -> ProcessingResult:
         Pipeline = self._try_import_pyvhr()
 
         if Pipeline is not None:
             try:
+                if progress:
+                    progress.update(stage="pyvhr", message="Running pyVHR pipeline", percent=None, force=True)
                 cap = cv2.VideoCapture(video_path)
                 fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
                 cap.release()
@@ -131,7 +135,7 @@ class PyVHRService(BaseService):
 
                 # Basic sanity check: if pyVHR returns an out-of-range BPM, fall back.
                 if bpm_mean is not None and (bpm_mean < 40.0 or bpm_mean > 200.0):
-                    fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize)
+                    fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress)
                     if fallback.success:
                         fallback.warnings = (fallback.warnings or []) + [
                             f"pyVHR returned out-of-range BPM ({bpm_mean:.1f}); using fallback rPPG engine instead."
@@ -159,7 +163,7 @@ class PyVHRService(BaseService):
                 pyvhr_error = f"{type(e).__name__}: {e}"
                 pyvhr_tb = traceback.format_exc()
 
-                fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize)
+                fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress)
                 if fallback.success:
                     fallback.warnings = (fallback.warnings or []) + [
                         f"pyVHR failed for this input; using fallback rPPG engine ({pyvhr_error})"
@@ -175,7 +179,7 @@ class PyVHRService(BaseService):
                 )
 
         # Fallback implementation (no pyVHR)
-        return self._process_fallback(video_path=video_path, method=method, winsize=winsize)
+        return self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress)
 
     def process_frames(self, jpeg_frames: List[bytes], fps: float) -> ProcessingResult:
         """Process a buffer of JPEG frames (from webcam WebSocket)."""
@@ -232,26 +236,37 @@ class PyVHRService(BaseService):
         warnings.append(f"Method '{method}' not supported in fallback mode; using cpu_POS.")
         return "POS_WANG", warnings
 
-    def _process_fallback(self, video_path: str, method: str, winsize: int) -> ProcessingResult:
+    def _process_fallback(self, video_path: str, method: str, winsize: int, progress: ProgressSink | None = None) -> ProcessingResult:
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         frames = []
+        read_count = 0
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
             frames.append(frame)
+            read_count += 1
+            if progress:
+                if total_frames > 0:
+                    overall = (read_count / total_frames) * 35.0
+                    progress.update(stage="read_frames", message="Reading video frames", current=read_count, total=total_frames, percent=overall)
+                else:
+                    progress.update(stage="read_frames", message="Reading video frames", current=read_count, total=None, percent=None)
         cap.release()
 
-        return self._process_fallback_frames(frames_bgr=frames, fps=float(fps), method=method, winsize=winsize)
+        return self._process_fallback_frames(frames_bgr=frames, fps=float(fps), method=method, winsize=winsize, progress=progress)
 
-    def _process_fallback_frames(self, frames_bgr: list[np.ndarray], fps: float, method: str, winsize: int) -> ProcessingResult:
+    def _process_fallback_frames(self, frames_bgr: list[np.ndarray], fps: float, method: str, winsize: int, progress: ProgressSink | None = None) -> ProcessingResult:
         rppg_method, warnings = self._map_method_to_rppg(method)
         rppg = RPPGService()
-        frames_rgb = rppg.extract_face_frames_from_bgr_frames(frames_bgr)
+        frames_rgb = rppg.extract_face_frames_from_bgr_frames(frames_bgr, progress=progress)
         if frames_rgb is None:
             return ProcessingResult(success=False, error="No face detected in frames.", warnings=warnings)
 
+        if progress:
+            progress.update(stage="rppg_method", message=f"Running {rppg_method}", percent=75.0, force=True)
         bvp = rppg._run_method(rppg_method, frames_rgb, fps)  # noqa: SLF001
         if bvp is None:
             return ProcessingResult(success=False, error=f"Method {rppg_method} failed.", warnings=warnings)
@@ -263,22 +278,30 @@ class PyVHRService(BaseService):
         bpm_times: list[float] = []
         conf_values: list[float] = []
 
-        for start in range(0, len(bvp) - win_frames + 1, step_frames):
+        total_windows = max(0, (len(bvp) - win_frames) // step_frames + 1) if len(bvp) >= win_frames else 0
+        for win_idx, start in enumerate(range(0, len(bvp) - win_frames + 1, step_frames), start=1):
             segment = bvp[start : start + win_frames]
             bpm, conf, _, _ = rppg._bvp_to_bpm(segment, fps)  # noqa: SLF001
             bpm_values.append(float(bpm))
             conf_values.append(float(conf))
             bpm_times.append((start + win_frames / 2) / fps)
+            if progress and total_windows > 0:
+                overall = 75.0 + (win_idx / total_windows) * 20.0
+                progress.update(stage="estimate_bpm", message="Estimating BPM", current=win_idx, total=total_windows, percent=overall)
 
         if bpm_values:
             bpm_mean = float(np.nanmean(bpm_values))
             confidence = float(np.nanmean(conf_values))
         else:
+            if progress:
+                progress.update(stage="estimate_bpm", message="Estimating BPM", percent=95.0, force=True)
             bpm_full, confidence, _, _ = rppg._bvp_to_bpm(bvp, fps)  # noqa: SLF001
             bpm_mean = float(bpm_full)
 
         times_es = (np.arange(len(bvp), dtype=np.float32) / float(fps)).tolist()
         hrv_data = self._compute_hrv([bvp], times_es)
+        if progress:
+            progress.update(stage="analyze", message="Computing HRV metrics", percent=100.0, force=True)
 
         return ProcessingResult(
             success=True,

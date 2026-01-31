@@ -10,6 +10,9 @@ function Progress({
   value,
   ...props
 }: React.ComponentProps<typeof ProgressPrimitive.Root>) {
+  const isDeterminate = typeof value === "number" && Number.isFinite(value)
+  const clamped = isDeterminate ? Math.min(100, Math.max(0, value)) : null
+
   return (
     <ProgressPrimitive.Root
       data-slot="progress"
@@ -21,8 +24,15 @@ function Progress({
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
-        className="bg-primary h-full w-full flex-1 transition-all"
-        style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
+        className={cn(
+          "bg-primary h-full transition-all",
+          isDeterminate ? "w-full flex-1" : "w-1/3 animate-progress-indeterminate"
+        )}
+        style={
+          isDeterminate
+            ? { transform: `translateX(-${100 - (clamped ?? 0)}%)` }
+            : { transform: "translateX(-100%)" }
+        }
       />
     </ProgressPrimitive.Root>
   )

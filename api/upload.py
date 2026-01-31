@@ -14,6 +14,10 @@ async def save_upload(file: UploadFile) -> Path:
     ext = Path(file.filename).suffix if file.filename else ".mp4"
     filename = f"{uuid.uuid4().hex}{ext}"
     dest = UPLOAD_DIR / filename
-    content = await file.read()
-    dest.write_bytes(content)
+    with dest.open("wb") as f:
+        while True:
+            chunk = await file.read(1024 * 1024)  # 1MB
+            if not chunk:
+                break
+            f.write(chunk)
     return dest

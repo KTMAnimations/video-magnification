@@ -7,6 +7,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Slider } from './ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Progress } from './ui/progress';
 
 type LiveInputSource = 'camera' | 'mit';
 
@@ -365,6 +366,16 @@ export function WebcamPanel({ onStop }: Props) {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {collecting && collecting.needed > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Buffering frames</span>
+                <span className="tabular-nums">{collecting.collected}/{collecting.needed}</span>
+              </div>
+              <Progress value={(collecting.collected / collecting.needed) * 100} />
+            </div>
+          )}
+
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Input</div>

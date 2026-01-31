@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 
 from api.services.base import BaseService, ProcessingResult
+from api.progress import ProgressSink
 
 AUDIO_DIR = Path("data/audio")
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
@@ -35,11 +36,13 @@ class VisualMicService(BaseService):
         self,
         video_path: str,
         roi: Optional[Tuple[int, int, int, int]] = None,
+        progress: ProgressSink | None = None,
     ) -> ProcessingResult:
         warnings = []
         try:
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
             if fps < 100:
                 warnings.append(
@@ -50,6 +53,7 @@ class VisualMicService(BaseService):
 
             frames_gray: list[np.ndarray] = []
             w = h = None
+            read_count = 0
             while True:
                 ret, frame = cap.read()
                 if not ret:
@@ -66,6 +70,19 @@ class VisualMicService(BaseService):
                     if x1 > x0 and y1 > y0:
                         gray = gray[y0:y1, x0:x1]
                 frames_gray.append(gray)
+                read_count += 1
+                if progress:
+                    if total_frames > 0:
+                        overall = (read_count / total_frames) * 50.0
+                        progress.update(
+                            stage="read_frames",
+                            message="Reading video frames",
+                            current=read_count,
+                            total=total_frames,
+                            percent=overall,
+                        )
+                    else:
+                        progress.update(stage="read_frames", message="Reading video frames", current=read_count, total=None, percent=None)
             cap.release()
 
             if len(frames_gray) < 2:
@@ -74,10 +91,20 @@ class VisualMicService(BaseService):
             # Frame-difference motion proxy (fallback that works across NumPy versions)
             motion = []
             prev = frames_gray[0]
-            for cur in frames_gray[1:]:
+            total_motion = max(0, len(frames_gray) - 1)
+            for idx, cur in enumerate(frames_gray[1:], start=1):
                 diff = cur - prev
                 motion.append(float(np.mean(np.abs(diff))))
                 prev = cur
+                if progress and total_motion > 0:
+                    overall = 50.0 + (idx / total_motion) * 40.0
+                    progress.update(
+                        stage="compute_motion",
+                        message="Computing motion signal",
+                        current=idx,
+                        total=total_motion,
+                        percent=overall,
+                    )
 
             audio = np.array(motion, dtype=np.float32)
             audio = audio - float(audio.mean())
@@ -93,7 +120,11 @@ class VisualMicService(BaseService):
             out_name = f"{uuid.uuid4().hex}.wav"
             out_path = AUDIO_DIR / out_name
             import soundfile as sf
+            if progress:
+                progress.update(stage="write_audio", message="Writing audio output", percent=95.0, force=True)
             sf.write(str(out_path), audio, sample_rate)
+            if progress:
+                progress.update(stage="write_audio", message="Writing audio output", percent=100.0, force=True)
 
             # Waveform data for frontend
             audio_normalized = audio / (np.abs(audio).max() + 1e-10)

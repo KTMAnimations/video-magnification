@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from api.services.base import BaseService, ProcessingResult
+from api.progress import ProgressSink
 
 BACKENDS_DIR = Path("backends/rPPG-Toolbox")
 
@@ -32,13 +33,13 @@ class RPPGService(BaseService):
             self._last_error = f"{type(e).__name__}: {e}"
             return False
 
-    def process(self, video_path: str, method: str = "POS_WANG") -> ProcessingResult:
+    def process(self, video_path: str, method: str = "POS_WANG", progress: ProgressSink | None = None) -> ProcessingResult:
         try:
             if str(BACKENDS_DIR) not in sys.path:
                 sys.path.insert(0, str(BACKENDS_DIR))
 
             # Extract face ROI frames
-            frames_rgb = self._extract_face_frames(video_path)
+            frames_rgb = self._extract_face_frames(video_path, progress=progress)
             if frames_rgb is None:
                 return ProcessingResult(
                     success=False,
@@ -50,6 +51,8 @@ class RPPGService(BaseService):
             cap.release()
 
             # Call unsupervised method
+            if progress:
+                progress.update(stage="rppg_method", message=f"Running {method}", percent=75.0, force=True)
             bvp = self._run_method(method, frames_rgb, fps)
             if bvp is None:
                 return ProcessingResult(
@@ -57,7 +60,11 @@ class RPPGService(BaseService):
                 )
 
             # FFT to get BPM
+            if progress:
+                progress.update(stage="analyze", message="Estimating BPM", percent=90.0, force=True)
             bpm, bpm_confidence, psd_freqs, psd_power = self._bvp_to_bpm(bvp, fps)
+            if progress:
+                progress.update(stage="analyze", message="Estimating BPM", percent=100.0, force=True)
 
             return ProcessingResult(
                 success=True,
@@ -78,24 +85,39 @@ class RPPGService(BaseService):
                 error=f"rPPG processing failed: {e}\n{traceback.format_exc()}",
             )
 
-    def _extract_face_frames(self, video_path: str) -> np.ndarray | None:
+    def _extract_face_frames(self, video_path: str, progress: ProgressSink | None = None) -> np.ndarray | None:
         """Extract a sequence of face ROI frames (RGB) from a video.
 
         Returns: np.ndarray shape (N, H, W, 3) dtype float32 in [0, 255].
         """
         cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         frames_bgr = []
+        read_count = 0
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
             frames_bgr.append(frame)
+            read_count += 1
+            if progress:
+                if total_frames > 0:
+                    overall = (read_count / total_frames) * 35.0
+                    progress.update(
+                        stage="read_frames",
+                        message="Reading video frames",
+                        current=read_count,
+                        total=total_frames,
+                        percent=overall,
+                    )
+                else:
+                    progress.update(stage="read_frames", message="Reading video frames", current=read_count, total=None, percent=None)
         cap.release()
 
-        return self.extract_face_frames_from_bgr_frames(frames_bgr)
+        return self.extract_face_frames_from_bgr_frames(frames_bgr, progress=progress)
 
     @staticmethod
-    def extract_face_frames_from_bgr_frames(frames_bgr: list[np.ndarray]) -> np.ndarray | None:
+    def extract_face_frames_from_bgr_frames(frames_bgr: list[np.ndarray], progress: ProgressSink | None = None) -> np.ndarray | None:
         """Extract face ROI frames (RGB) from an in-memory list of BGR frames."""
         if len(frames_bgr) < 2:
             return None
@@ -107,12 +129,17 @@ class RPPGService(BaseService):
         frames_rgb: list[np.ndarray] = []
         last_face = None
 
-        for frame in frames_bgr:
+        total = len(frames_bgr)
+        for idx, frame in enumerate(frames_bgr, start=1):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(60, 60))
 
             if len(faces) > 0:
                 last_face = faces[0]
+
+            if progress and total > 0:
+                overall = 35.0 + (idx / total) * 40.0
+                progress.update(stage="detect_face", message="Detecting face ROI", current=idx, total=total, percent=overall)
 
             if last_face is None:
                 continue

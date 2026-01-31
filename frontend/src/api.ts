@@ -1,4 +1,4 @@
-import type { HealthData, ProcessingResponse } from './types';
+import type { HealthData, JobProgressResponse, ProcessingResponse } from './types';
 
 type BackendOrigin = string | null;
 
@@ -66,6 +66,98 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   throw lastError instanceof Error ? lastError : new Error('Request failed');
 }
 
+export interface UploadProgress {
+  loadedBytes: number;
+  totalBytes: number | null;
+  percent: number | null;
+}
+
+export type UploadProgressCallback = (progress: UploadProgress) => void;
+
+interface UploadOptions {
+  jobId?: string;
+  onUploadProgress?: UploadProgressCallback;
+}
+
+function shouldTryNextOriginStatus(origin: BackendOrigin, status: number): boolean {
+  if (status !== 404) return false;
+  if (ENV_BACKEND_ORIGIN) return false;
+  if (import.meta.env.DEV) return false;
+  return origin === normalizeOrigin(window.location.origin);
+}
+
+function xhrPostForm(
+  url: string,
+  form: FormData,
+  onUploadProgress?: UploadProgressCallback,
+): Promise<{ status: number; responseText: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.responseType = 'text';
+
+    if (onUploadProgress) {
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable && ev.total > 0) {
+          onUploadProgress({
+            loadedBytes: ev.loaded,
+            totalBytes: ev.total,
+            percent: (ev.loaded / ev.total) * 100,
+          });
+        } else {
+          onUploadProgress({ loadedBytes: ev.loaded, totalBytes: null, percent: null });
+        }
+      };
+    }
+
+    xhr.onload = () => resolve({ status: xhr.status, responseText: xhr.responseText });
+    class XhrNetworkError extends Error {
+      constructor() {
+        super(`Network error while uploading to ${url}`);
+        this.name = 'XhrNetworkError';
+      }
+    }
+
+    xhr.onerror = () => reject(new XhrNetworkError());
+    xhr.send(form);
+  });
+}
+
+async function apiUploadJson(path: string, form: FormData, opts?: UploadOptions): Promise<unknown> {
+  const candidates = resolvedBackendOrigin !== undefined ? [resolvedBackendOrigin] : candidateOrigins();
+  let lastError: unknown = null;
+
+  for (const origin of candidates) {
+    const url = buildUrl(origin, path);
+    try {
+      const { status, responseText } = await xhrPostForm(url, form, opts?.onUploadProgress);
+
+      if (shouldTryNextOriginStatus(origin, status)) {
+        lastError = new Error(`Backend not found at ${url}`);
+        continue;
+      }
+
+      // Cache the first origin that looks like the backend.
+      if (resolvedBackendOrigin === undefined) resolvedBackendOrigin = origin;
+
+      try {
+        return JSON.parse(responseText) as unknown;
+      } catch {
+        throw new Error(`Invalid JSON response (${status}) from ${url}`);
+      }
+    } catch (err) {
+      lastError = err;
+      // If we already had a cached origin and it failed at the network layer, clear and fall back.
+      if (resolvedBackendOrigin !== undefined && err instanceof Error && err.name === 'XhrNetworkError') {
+        resolvedBackendOrigin = undefined;
+        return apiUploadJson(path, form, opts);
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Request failed');
+}
+
 export function resolveBackendUrl(urlOrPath: string): string {
   if (!urlOrPath) return urlOrPath;
   if (isAbsoluteUrl(urlOrPath)) return urlOrPath;
@@ -86,16 +178,18 @@ export async function processMotion(
   magnification: number,
   mode: string,
   maxFrames?: number,
+  opts?: UploadOptions,
 ): Promise<ProcessingResponse> {
   const form = new FormData();
   form.append('video', file);
   form.append('magnification', magnification.toString());
   form.append('mode', mode);
+  if (opts?.jobId) form.append('job_id', opts.jobId);
   if (typeof maxFrames === 'number' && Number.isFinite(maxFrames) && maxFrames > 0) {
     form.append('max_frames', Math.round(maxFrames).toString());
   }
-  const res = await apiFetch('/magnify/motion', { method: 'POST', body: form });
-  return res.json();
+  const payload = (await apiUploadJson('/magnify/motion', form, opts)) as ProcessingResponse;
+  return payload;
 }
 
 export async function processColor(
@@ -105,6 +199,7 @@ export async function processColor(
   amplification: number,
   pyramidLevels: number,
   roi?: { x: number; y: number; w: number; h: number },
+  opts?: UploadOptions,
 ): Promise<ProcessingResponse> {
   const form = new FormData();
   form.append('video', file);
@@ -112,53 +207,66 @@ export async function processColor(
   form.append('freq_max', freqMax.toString());
   form.append('amplification', amplification.toString());
   form.append('pyramid_levels', pyramidLevels.toString());
+  if (opts?.jobId) form.append('job_id', opts.jobId);
   if (roi) {
     form.append('roi_x', roi.x.toString());
     form.append('roi_y', roi.y.toString());
     form.append('roi_w', roi.w.toString());
     form.append('roi_h', roi.h.toString());
   }
-  const res = await apiFetch('/magnify/color', { method: 'POST', body: form });
-  return res.json();
+  const payload = (await apiUploadJson('/magnify/color', form, opts)) as ProcessingResponse;
+  return payload;
 }
 
 export async function processHeartRate(
   file: File,
   method: string,
+  opts?: UploadOptions,
 ): Promise<ProcessingResponse> {
   const form = new FormData();
   form.append('video', file);
   form.append('method', method);
-  const res = await apiFetch('/vitals/heartrate', { method: 'POST', body: form });
-  return res.json();
+  if (opts?.jobId) form.append('job_id', opts.jobId);
+  const payload = (await apiUploadJson('/vitals/heartrate', form, opts)) as ProcessingResponse;
+  return payload;
 }
 
 export async function processRealtime(
   file: File,
   method: string,
   winsize: number,
+  opts?: UploadOptions,
 ): Promise<ProcessingResponse> {
   const form = new FormData();
   form.append('video', file);
   form.append('method', method);
   form.append('winsize', winsize.toString());
-  const res = await apiFetch('/vitals/realtime', { method: 'POST', body: form });
-  return res.json();
+  if (opts?.jobId) form.append('job_id', opts.jobId);
+  const payload = (await apiUploadJson('/vitals/realtime', form, opts)) as ProcessingResponse;
+  return payload;
 }
 
 export async function recoverAudio(
   file: File,
   roi?: { x: number; y: number; w: number; h: number },
+  opts?: UploadOptions,
 ): Promise<ProcessingResponse> {
   const form = new FormData();
   form.append('video', file);
+  if (opts?.jobId) form.append('job_id', opts.jobId);
   if (roi) {
     form.append('roi_x', roi.x.toString());
     form.append('roi_y', roi.y.toString());
     form.append('roi_w', roi.w.toString());
     form.append('roi_h', roi.h.toString());
   }
-  const res = await apiFetch('/audio/recover', { method: 'POST', body: form });
+  const payload = (await apiUploadJson('/audio/recover', form, opts)) as ProcessingResponse;
+  return payload;
+}
+
+export async function getJobProgress(jobId: string): Promise<JobProgressResponse> {
+  const res = await apiFetch(`/progress/${encodeURIComponent(jobId)}`);
+  if (!res.ok) throw new Error(`Progress fetch failed: ${res.status}`);
   return res.json();
 }
 

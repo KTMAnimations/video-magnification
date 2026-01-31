@@ -21,6 +21,19 @@ export interface ProcessingResponse {
   processing_time_seconds: number;
 }
 
+export interface JobProgressResponse {
+  job_id: string;
+  status: 'not_found' | 'running' | 'complete' | 'error';
+  stage?: string | null;
+  message?: string | null;
+  current?: number | null;
+  total?: number | null;
+  percent?: number | null;
+  error?: string | null;
+  started_at?: number | null;
+  updated_at?: number | null;
+}
+
 export interface ROI {
   x: number;
   y: number;

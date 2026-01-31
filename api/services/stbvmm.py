@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from api.services.base import BaseService, ProcessingResult
+from api.progress import ProgressSink
 
 BACKENDS_DIR = Path("backends/STB-VMM")
 PROCESSED_DIR = Path("data/processed")
@@ -94,18 +95,28 @@ class STBVMMService(BaseService):
         magnification: float = 20.0,
         mode: str = "static",
         max_frames: int = 0,
+        progress: ProgressSink | None = None,
     ) -> ProcessingResult:
+        cap = None
+        writer = None
         try:
             import torch
 
             os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+            if progress:
+                progress.update(stage="load_model", message="Loading STB-VMM model", percent=0.0, force=True)
             self._load_model()
 
             cap = cv2.VideoCapture(video_path)
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            ret, first_frame = cap.read()
+            if not ret or first_frame is None:
+                cap.release()
+                return ProcessingResult(success=False, error="Could not read video frames.")
+
+            height, width = first_frame.shape[:2]
 
             # Model requires dimensions divisible by 64 (8x conv stride × 8 window size).
             # Resize to nearest multiples of 64, process, then resize output back.
@@ -115,35 +126,40 @@ class STBVMMService(BaseService):
             max_side = int(os.environ.get("VMAG_STBVMM_MAX_SIDE", "192"))
             if max_side < 64:
                 max_side = 64
+            max_side = max(64, (max_side // 64) * 64)
             proc_h = min(proc_h, max_side)
             proc_w = min(proc_w, max_side)
 
-            frames = []
-            hit_frame_limit = False
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                frames.append(frame)
-                if max_frames > 0 and len(frames) >= max_frames:
-                    hit_frame_limit = True
-                    break
-            cap.release()
-
             warnings = []
-            if max_frames > 0 and hit_frame_limit:
-                if total_frames:
-                    warnings.append(f"Fast preview: processed first {max_frames} frames out of {total_frames}.")
-                else:
-                    warnings.append(f"Fast preview: processed first {max_frames} frames.")
             if proc_h < height or proc_w < width:
                 warnings.append(
                     f"Downscaled to {proc_w}x{proc_h} for faster processing "
                     f"(set VMAG_STBVMM_MAX_SIDE to adjust)."
                 )
 
-            if len(frames) < 2:
+            if max_frames > 0 and max_frames < 2:
+                cap.release()
                 return ProcessingResult(success=False, error="Video too short (need at least 2 frames).")
+
+            ret, second_frame = cap.read()
+            if not ret or second_frame is None:
+                cap.release()
+                return ProcessingResult(success=False, error="Video too short (need at least 2 frames).")
+            read_frames = 2
+
+            expected_total = None
+            if total_frames > 0 and max_frames > 0:
+                expected_total = min(total_frames, max_frames)
+            elif total_frames > 0:
+                expected_total = total_frames
+            elif max_frames > 0:
+                expected_total = max_frames
+
+            expected_out = (expected_total - 1) if expected_total and expected_total >= 2 else None
+            out_frames = 0
+
+            if progress:
+                progress.update(stage="infer", message="Running STB-VMM inference", percent=5.0, force=True)
 
             out_name = f"{uuid.uuid4().hex}.mp4"
             out_path = PROCESSED_DIR / out_name
@@ -155,9 +171,11 @@ class STBVMMService(BaseService):
                 fourcc = cv2.VideoWriter_fourcc(*"mp4v")
                 writer = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
             if not writer.isOpened():
+                cap.release()
+                writer.release()
                 return ProcessingResult(success=False, error="Failed to initialize video writer.", warnings=warnings)
 
-            ref_frame = frames[0]  # reference for static mode
+            ref_frame = first_frame  # reference for static mode
             batch_size = int(os.environ.get("VMAG_STBVMM_BATCH_SIZE", "8"))
             if batch_size < 1:
                 batch_size = 1
@@ -166,36 +184,105 @@ class STBVMMService(BaseService):
             if mode == "static":
                 ref_t = self._preprocess(ref_frame, proc_h, proc_w)
 
+            hit_frame_limit = False
+            prev_frame = first_frame
+            a_tensors = []
+            b_tensors = []
+
             with torch.no_grad():
-                for start in range(1, len(frames), batch_size):
-                    end = min(len(frames), start + batch_size)
-                    bs = end - start
+                def flush_batch():
+                    nonlocal a_tensors, b_tensors
+                    nonlocal out_frames
+                    bs = len(b_tensors)
+                    if bs <= 0:
+                        return
 
                     if mode == "static" and ref_t is not None:
                         a_batch = ref_t.expand(bs, -1, -1, -1).contiguous().to(self._device)
                     else:
-                        a_tensors = []
-                        for i in range(start, end):
-                            a_tensors.append(self._preprocess(frames[i - 1], proc_h, proc_w))
                         a_batch = torch.cat(a_tensors, dim=0).to(self._device)
 
-                    b_tensors = []
-                    for i in range(start, end):
-                        b_tensors.append(self._preprocess(frames[i], proc_h, proc_w))
                     b_batch = torch.cat(b_tensors, dim=0).to(self._device)
-
                     mag_batch = torch.full((bs, 1, 1, 1), float(magnification), device=self._device, dtype=torch.float32)
-
                     y_hat, _, _, _ = self._model(a_batch, b_batch, mag_batch)
 
                     for j in range(bs):
                         result_frame = self._postprocess(y_hat[j : j + 1], height, width)
                         writer.write(result_frame)
+                        out_frames += 1
+                        if progress:
+                            if expected_out and expected_out > 0:
+                                overall = 5.0 + (out_frames / expected_out) * 95.0
+                                progress.update(
+                                    stage="infer",
+                                    message="Running STB-VMM inference",
+                                    current=out_frames,
+                                    total=expected_out,
+                                    percent=overall,
+                                )
+                            else:
+                                progress.update(
+                                    stage="infer",
+                                    message="Running STB-VMM inference",
+                                    current=out_frames,
+                                    total=None,
+                                    percent=None,
+                                )
+
+                    a_tensors = []
+                    b_tensors = []
+
+                # Seed the first pair (frame0 -> frame1)
+                if mode == "static":
+                    b_tensors.append(self._preprocess(second_frame, proc_h, proc_w))
+                else:
+                    a_tensors.append(self._preprocess(prev_frame, proc_h, proc_w))
+                    b_tensors.append(self._preprocess(second_frame, proc_h, proc_w))
+                    prev_frame = second_frame
+
+                while True:
+                    if len(b_tensors) >= batch_size:
+                        flush_batch()
+
+                    if max_frames > 0 and read_frames >= max_frames:
+                        hit_frame_limit = True
+                        break
+
+                    ret, frame = cap.read()
+                    if not ret or frame is None:
+                        break
+                    read_frames += 1
+
+                    if mode == "static":
+                        b_tensors.append(self._preprocess(frame, proc_h, proc_w))
+                    else:
+                        a_tensors.append(self._preprocess(prev_frame, proc_h, proc_w))
+                        b_tensors.append(self._preprocess(frame, proc_h, proc_w))
+                        prev_frame = frame
+
+                flush_batch()
 
             writer.release()
+            cap.release()
+
+            if max_frames > 0 and hit_frame_limit:
+                if total_frames:
+                    warnings.append(f"Fast preview: processed first {max_frames} frames out of {total_frames}.")
+                else:
+                    warnings.append(f"Fast preview: processed first {max_frames} frames.")
             return ProcessingResult(success=True, output_path=out_name, warnings=warnings)
 
         except Exception as e:
+            try:
+                if writer is not None:
+                    writer.release()
+            except Exception:
+                pass
+            try:
+                if cap is not None:
+                    cap.release()
+            except Exception:
+                pass
             return ProcessingResult(
                 success=False,
                 error=f"STB-VMM processing failed: {e}\n{traceback.format_exc()}",

@@ -26,7 +26,7 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
   // Motion params
   const [magnification, setMagnification] = useState(20);
   const [motionMode, setMotionMode] = useState('static');
-  const [motionFastPreview, setMotionFastPreview] = useState(true);
+  const [motionFastPreview, setMotionFastPreview] = useState(false);
 
   // Color params
   const [freqMin, setFreqMin] = useState(0.75);
@@ -111,7 +111,7 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
                   checked={motionFastPreview}
                   onChange={(e) => setMotionFastPreview(e.target.checked)}
                 />
-                Fast preview (first 120 frames)
+                Fast preview (first 120 frames, ~4s @ 30fps)
               </label>
             </>
           )}

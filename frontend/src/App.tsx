@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
-import type { Mode, Stage, ProcessingResponse, ROI } from './types';
+import type { JobProgressResponse, Mode, Stage, ProcessingResponse, ROI } from './types';
 import { MODE_CONFIGS } from './types';
-import { processMotion, processColor, processHeartRate, processRealtime, recoverAudio } from './api';
+import { getJobProgress, processMotion, processColor, processHeartRate, processRealtime, recoverAudio } from './api';
 import { useBackendHealth } from './hooks/useBackendHealth';
 import { Header } from './components/Header';
 import { StepIndicator } from './components/StepIndicator';
@@ -26,12 +26,22 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 const MODES: Mode[] = ['motion', 'color', 'heartrate', 'realtime', 'audio'];
 
+function newJobId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function App() {
   const { health } = useBackendHealth();
   const [mode, setMode] = useState<Mode>('motion');
   const [stage, setStage] = useState<Stage>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<ProcessingResponse | null>(null);
+  const [processingProgress, setProcessingProgress] = useState<{
+    jobId: string;
+    uploadPercent: number;
+    backend: JobProgressResponse | null;
+  } | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [roi, setRoi] = useState<ROI | undefined>(undefined);
   const [showROI, setShowROI] = useState(false);
@@ -41,6 +51,7 @@ function App() {
     setStage('upload');
     setFile(null);
     setResult(null);
+    setProcessingProgress(null);
     setCameraActive(false);
     setRoi(undefined);
     setShowROI(false);
@@ -80,6 +91,27 @@ function App() {
       if (!file) return;
       setStage('processing');
 
+      const jobId = newJobId();
+      setProcessingProgress({ jobId, uploadPercent: 0, backend: null });
+
+      let stopped = false;
+      let inFlight = false;
+      const poll = async () => {
+        if (stopped || inFlight) return;
+        inFlight = true;
+        try {
+          const p = await getJobProgress(jobId);
+          setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, backend: p } : prev));
+        } catch {
+          // Ignore transient polling errors.
+        } finally {
+          inFlight = false;
+        }
+      };
+
+      poll();
+      const pollId = window.setInterval(poll, 400);
+
       try {
         let res: ProcessingResponse;
         switch (mode) {
@@ -89,6 +121,14 @@ function App() {
               typeof params.magnification === 'number' ? params.magnification : Number(params.magnification),
               typeof params.mode === 'string' ? params.mode : 'static',
               typeof params.maxFrames === 'number' ? params.maxFrames : (params.maxFrames ? Number(params.maxFrames) : undefined),
+              {
+                jobId,
+                onUploadProgress: (p) => {
+                  if (typeof p.percent === 'number') {
+                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                  }
+                },
+              },
             );
             break;
           case 'color':
@@ -99,24 +139,58 @@ function App() {
               typeof params.amplification === 'number' ? params.amplification : Number(params.amplification),
               typeof params.pyramidLevels === 'number' ? params.pyramidLevels : Number(params.pyramidLevels),
               roi,
+              {
+                jobId,
+                onUploadProgress: (p) => {
+                  if (typeof p.percent === 'number') {
+                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                  }
+                },
+              },
             );
             break;
           case 'heartrate':
-            res = await processHeartRate(file, typeof params.method === 'string' ? params.method : 'POS_WANG');
+            res = await processHeartRate(file, typeof params.method === 'string' ? params.method : 'POS_WANG', {
+              jobId,
+              onUploadProgress: (p) => {
+                if (typeof p.percent === 'number') {
+                  setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                }
+              },
+            });
             break;
           case 'realtime':
             res = await processRealtime(
               file,
               typeof params.method === 'string' ? params.method : 'cpu_POS',
               typeof params.winsize === 'number' ? params.winsize : Number(params.winsize),
+              {
+                jobId,
+                onUploadProgress: (p) => {
+                  if (typeof p.percent === 'number') {
+                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                  }
+                },
+              },
             );
             break;
           case 'audio':
-            res = await recoverAudio(file, roi);
+            res = await recoverAudio(file, roi, {
+              jobId,
+              onUploadProgress: (p) => {
+                if (typeof p.percent === 'number') {
+                  setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, p.percent)) } : prev));
+                }
+              },
+            });
             break;
           default:
             res = { success: false, error: 'Unknown mode', warnings: [], processing_time_seconds: 0 };
         }
+
+        stopped = true;
+        clearInterval(pollId);
+        setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: 100 } : prev));
         setResult(res);
         setStage('results');
         if (!res.success) {
@@ -125,6 +199,8 @@ function App() {
           res.warnings.forEach((w) => showToast(w, 'warning'));
         }
       } catch (err: unknown) {
+        stopped = true;
+        clearInterval(pollId);
         const errMsg = err instanceof Error ? err.message : 'Processing request failed';
         setResult({
           success: false,
@@ -143,6 +219,7 @@ function App() {
     setStage('upload');
     setFile(null);
     setResult(null);
+    setProcessingProgress(null);
     setRoi(undefined);
     setShowROI(false);
   }, []);
@@ -170,7 +247,7 @@ function App() {
       case 'configure':
         return <ConfigPanel mode={mode} onSubmit={handleProcess} fileName={file?.name} />;
       case 'processing':
-        return <ProcessingIndicator />;
+        return <ProcessingIndicator progress={processingProgress} />;
       case 'results':
         return result ? (
           <ResultsViewer mode={mode} result={result} originalFile={file || undefined} onReset={handleReset} />

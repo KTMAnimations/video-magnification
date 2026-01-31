@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from api.services.base import BaseService, ProcessingResult
+from api.progress import ProgressSink
 
 PROCESSED_DIR = Path("data/processed")
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,6 +34,7 @@ class EVMService(BaseService):
         amplification: float = 50.0,
         pyramid_levels: int = 4,
         roi: tuple[int, int, int, int] | None = None,
+        progress: ProgressSink | None = None,
     ) -> ProcessingResult:
         try:
             from eulerian_magnification import eulerian_magnification as evm_fn
@@ -46,17 +48,41 @@ class EVMService(BaseService):
             if pyramid_levels < 1:
                 return ProcessingResult(success=False, error="pyramid_levels must be >= 1.")
 
+            if progress:
+                progress.update(stage="evm", message="Opening video", percent=0, force=True)
+
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
 
             frames = []
+            read_count = 0
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
                 frames.append(frame)
+                read_count += 1
+                if progress:
+                    if total_frames > 0:
+                        overall = (read_count / total_frames) * 25.0
+                        progress.update(
+                            stage="read_frames",
+                            message="Reading video frames",
+                            current=read_count,
+                            total=total_frames,
+                            percent=overall,
+                        )
+                    else:
+                        progress.update(
+                            stage="read_frames",
+                            message="Reading video frames",
+                            current=read_count,
+                            total=None,
+                            percent=None,
+                        )
             cap.release()
 
             if not frames:
@@ -88,17 +114,23 @@ class EVMService(BaseService):
             if roi is None:
                 # EVM expects numpy array with shape (n_frames, h, w, 3)
                 vid_data = np.array(frames)
+                if progress:
+                    progress.update(stage="magnify", message="Running EVM magnification", percent=25.0, force=True)
                 result_frames = evm_fn(
                     vid_data, fps, freq_min, freq_max, amplification, pyramid_levels
                 )
             else:
                 roi_frames = [f[y0:y1, x0:x1] for f in frames]
                 roi_vid_data = np.array(roi_frames)
+                if progress:
+                    progress.update(stage="magnify", message="Running EVM magnification (ROI)", percent=25.0, force=True)
                 roi_result_frames = evm_fn(
                     roi_vid_data, fps, freq_min, freq_max, amplification, pyramid_levels
                 )
                 # Composite ROI back onto full frames
                 result_frames = []
+                if progress:
+                    progress.update(stage="composite", message="Compositing ROI", percent=70.0, force=True)
                 for orig, roi_frame in zip(frames, roi_result_frames, strict=False):
                     out = orig.copy()
                     if roi_frame.dtype != np.uint8:
@@ -111,6 +143,8 @@ class EVMService(BaseService):
             warnings: list[str] = []
 
             # Write output
+            if progress:
+                progress.update(stage="write_output", message="Writing output video", percent=80.0, force=True)
             out_name = f"{uuid.uuid4().hex}.mp4"
             out_path = PROCESSED_DIR / out_name
             # Prefer H.264 (avc1) for in-browser playback (Chrome often can't decode mp4v).
@@ -123,13 +157,23 @@ class EVMService(BaseService):
             if not writer.isOpened():
                 return ProcessingResult(success=False, error="Failed to initialize video writer.")
 
-            for frame in result_frames:
+            total_out = len(result_frames)
+            for idx, frame in enumerate(result_frames, start=1):
                 # Clip float frames to [0, 255]
                 if frame.dtype != np.uint8:
                     frame = np.clip(frame, 0, 255).astype(np.uint8)
                 if frame.shape[:2] != (height, width):
                     frame = cv2.resize(frame, (width, height))
                 writer.write(frame)
+                if progress and total_out > 0:
+                    overall = 80.0 + (idx / total_out) * 20.0
+                    progress.update(
+                        stage="write_output",
+                        message="Writing output video",
+                        current=idx,
+                        total=total_out,
+                        percent=overall,
+                    )
             writer.release()
 
             return ProcessingResult(success=True, output_path=out_name, warnings=warnings)

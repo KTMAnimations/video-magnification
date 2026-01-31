@@ -81,11 +81,12 @@ def health_check():
 
 
 # Import and include routers
-from api.routers import magnify, vitals, audio  # noqa: E402
+from api.routers import magnify, vitals, audio, progress  # noqa: E402
 
 app.include_router(magnify.router, prefix="/magnify", tags=["magnify"])
 app.include_router(vitals.router, prefix="/vitals", tags=["vitals"])
 app.include_router(audio.router, prefix="/audio", tags=["audio"])
+app.include_router(progress.router, prefix="/progress", tags=["progress"])
 
 
 # Optional: serve the built frontend from this same FastAPI process.
