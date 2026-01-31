@@ -26,7 +26,7 @@ function buildUrl(origin: BackendOrigin, path: string): string {
 function candidateOrigins(): BackendOrigin[] {
   if (ENV_BACKEND_ORIGIN) return [ENV_BACKEND_ORIGIN];
   if (import.meta.env.DEV) return [null]; // rely on Vite proxy
-  return [normalizeOrigin(window.location.origin), 'http://localhost:8000', 'http://127.0.0.1:8000'];
+  return [normalizeOrigin(window.location.origin), 'http://localhost:8001', 'http://127.0.0.1:8001'];
 }
 
 function shouldTryNextOrigin(origin: BackendOrigin, res: Response): boolean {
