@@ -112,10 +112,19 @@ class RPPGService(BaseService):
 
             bvp = self._run_method(m, frames_rgb, fps)
             if bvp is None:
-                compare.append({"method": m, "ok": False, "error": "method failed"})
+                compare.append({"method": m, "ok": False, "error": "method failed or returned no signal"})
                 continue
 
-            bpm, conf, psd_freqs, psd_power = self._bvp_to_bpm(bvp, fps)
+            bvp = np.asarray(bvp, dtype=np.float32).reshape(-1)
+            if bvp.size < 2:
+                compare.append({"method": m, "ok": False, "error": "method returned no signal"})
+                continue
+
+            try:
+                bpm, conf, psd_freqs, psd_power = self._bvp_to_bpm(bvp, fps)
+            except Exception as e:
+                compare.append({"method": m, "ok": False, "error": f"analysis failed: {type(e).__name__}: {e}"})
+                continue
             compare.append(
                 {
                     "method": m,
@@ -270,7 +279,11 @@ class RPPGService(BaseService):
                 bvp = method_fn(frames_rgb, fps)
             else:
                 bvp = method_fn(frames_rgb)
-            return np.array(bvp).flatten()
+            bvp_arr = np.asarray(bvp, dtype=np.float32).reshape(-1)
+            # Some upstream methods return empty/degenerate outputs on too-short clips.
+            if bvp_arr.size < 2:
+                return None
+            return bvp_arr
         except Exception:
             return None
 
@@ -278,8 +291,12 @@ class RPPGService(BaseService):
         """Convert BVP signal to BPM via FFT."""
         from scipy.fft import fft, fftfreq
 
-        N = len(bvp)
-        yf = np.abs(fft(bvp))[:N // 2]
+        bvp_arr = np.asarray(bvp, dtype=np.float32).reshape(-1)
+        N = int(bvp_arr.size)
+        if N < 2 or fps <= 0:
+            return 0.0, 0.0, [], []
+
+        yf = np.abs(fft(bvp_arr))[:N // 2]
         xf = fftfreq(N, 1.0 / fps)[:N // 2]
 
         # Search in HR range (40-200 BPM = 0.67-3.33 Hz)
