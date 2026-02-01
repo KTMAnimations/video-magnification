@@ -4,6 +4,9 @@ export type Stage = 'upload' | 'configure' | 'processing' | 'results';
 export interface BackendInfo {
   label: string;
   available: boolean;
+  usable?: boolean;
+  using_fallback?: boolean;
+  fallback?: string | null;
   error: string | null;
 }
 

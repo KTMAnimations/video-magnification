@@ -92,20 +92,59 @@ def get_backend_status() -> Dict[str, Dict[str, Any]]:
         "stbvmm": ("STB-VMM (Motion Magnification)", get_stbvmm),
         "visualmic": ("Visual-Mic (Audio Recovery)", get_visualmic),
     }
+    fallback_map = {
+        # These engines may run via a different backend if their native deps/weights are missing.
+        "fd4mm": "stbvmm",
+        "rhythm_mamba": "rppg",
+    }
     for key, (label, getter) in services.items():
         if getter is None:
-            status[key] = {"label": label, "available": False, "error": None}
+            status[key] = {
+                "label": label,
+                "available": False,
+                "usable": False,
+                "using_fallback": False,
+                "fallback": None,
+                "error": None,
+            }
             continue
         try:
             svc = getter()
-            available = svc.is_available()
+            usable = bool(svc.is_available())
+            native_available = usable
+            native_fn = getattr(svc, "_native_is_available", None)
+            if callable(native_fn):
+                native_available = bool(native_fn())
+            using_fallback = bool(usable and not native_available)
             err = getattr(svc, "_last_error", None)
-            status[key] = {"label": label, "available": available, "error": (err if (not available and err) else None)}
+            status[key] = {
+                "label": label,
+                # "available" means the named backend is actually usable as itself.
+                "available": native_available,
+                # "usable" means the endpoint can still run (possibly via fallback).
+                "usable": usable,
+                "using_fallback": using_fallback,
+                "fallback": (fallback_map.get(key) if using_fallback else None),
+                # Preserve the native availability error even when a fallback exists,
+                # so the UI can explain why an engine is disabled.
+                "error": (err if (not native_available and err) else None),
+            }
         except Exception as e:
-            status[key] = {"label": label, "available": False, "error": str(e)}
+            status[key] = {
+                "label": label,
+                "available": False,
+                "usable": False,
+                "using_fallback": False,
+                "fallback": None,
+                "error": str(e),
+            }
 
-    status["motion"]["available"] = any(status.get(k, {}).get("available") for k in ("stbvmm", "fd4mm", "flowmag"))
-    status["heartrate"]["available"] = any(
-        status.get(k, {}).get("available") for k in ("rppg", "rhythm_mamba", "factorizephys")
-    )
+    motion_keys = ("stbvmm", "fd4mm", "flowmag")
+    hr_keys = ("rppg", "rhythm_mamba", "factorizephys")
+
+    status["motion"]["available"] = any(status.get(k, {}).get("available") for k in motion_keys)
+    status["motion"]["usable"] = any(status.get(k, {}).get("usable") for k in motion_keys)
+
+    status["heartrate"]["available"] = any(status.get(k, {}).get("available") for k in hr_keys)
+    status["heartrate"]["usable"] = any(status.get(k, {}).get("usable") for k in hr_keys)
     return status
