@@ -55,17 +55,18 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
   const [pyvhrMethod, setPyvhrMethod] = useState('cpu_POS');
   const [winsize, setWinsize] = useState(5);
 
-  const isBackendAvailable = (key: string): boolean => {
+  const isBackendUsable = (key: string): boolean => {
     if (!health) return true;
-    return !!health.backends?.[key]?.available;
+    const info = health.backends?.[key];
+    return !!(info && (info.usable ?? info.available));
   };
 
-  const resolvedMotionEngine = isBackendAvailable(motionEngine)
+  const resolvedMotionEngine = isBackendUsable(motionEngine)
     ? motionEngine
-    : (MOTION_ENGINES.find((e) => isBackendAvailable(e.value))?.value ?? motionEngine);
-  const resolvedHeartrateEngine = isBackendAvailable(heartrateEngine)
+    : (MOTION_ENGINES.find((e) => isBackendUsable(e.value))?.value ?? motionEngine);
+  const resolvedHeartrateEngine = isBackendUsable(heartrateEngine)
     ? heartrateEngine
-    : (HEARTRATE_ENGINES.find((e) => isBackendAvailable(e.value))?.value ?? heartrateEngine);
+    : (HEARTRATE_ENGINES.find((e) => isBackendUsable(e.value))?.value ?? heartrateEngine);
 
   const selectedMotionEngine = MOTION_ENGINES.find((e) => e.value === resolvedMotionEngine) ?? MOTION_ENGINES[0];
   const selectedHeartrateEngine =
@@ -136,7 +137,7 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
                   <SelectContent>
                     {MOTION_ENGINES.map((engine) => {
                       const info = health?.backends?.[engine.value];
-                      const disabled = !!health && !isBackendAvailable(engine.value);
+                      const disabled = !!health && !isBackendUsable(engine.value);
                       const fallbackTo = info?.fallback;
                       const fallbackLabel = fallbackTo
                         ? (MOTION_ENGINES.find((e) => e.value === fallbackTo)?.label ?? fallbackTo)
@@ -314,7 +315,7 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
                   <SelectContent>
                     {HEARTRATE_ENGINES.map((engine) => {
                       const info = health?.backends?.[engine.value];
-                      const disabled = !!health && !isBackendAvailable(engine.value);
+                      const disabled = !!health && !isBackendUsable(engine.value);
                       const fallbackTo = info?.fallback;
                       const fallbackLabel = fallbackTo
                         ? (HEARTRATE_ENGINES.find((e) => e.value === fallbackTo)?.label ?? fallbackTo)

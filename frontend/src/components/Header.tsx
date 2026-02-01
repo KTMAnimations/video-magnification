@@ -7,8 +7,8 @@ interface Props {
 }
 
 export function Header({ health }: Props) {
-  const availableCount = health
-    ? Object.values(health.backends).filter((b) => b.available).length
+  const usableCount = health
+    ? Object.values(health.backends).filter((b) => (b.usable ?? b.available)).length
     : 0;
   const totalCount = health ? Object.keys(health.backends).length : 0;
 
@@ -21,8 +21,8 @@ export function Header({ health }: Props) {
       </div>
       <div>
         {health ? (
-          <Badge variant={availableCount > 0 ? 'default' : 'destructive'} className="text-xs">
-            {availableCount}/{totalCount} backends
+          <Badge variant={usableCount > 0 ? 'default' : 'destructive'} className="text-xs">
+            {usableCount}/{totalCount} backends
           </Badge>
         ) : (
           <Badge variant="destructive" className="text-xs">Offline</Badge>

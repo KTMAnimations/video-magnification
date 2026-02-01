@@ -18,7 +18,7 @@ from api.services import get_backend_status
 MAX_FILE_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 CLEANUP_INTERVAL_SECONDS = 60 * 60    # Run every hour
 
-DATA_DIRS = ["data/uploads", "data/processed", "data/audio"]
+DATA_DIRS = ["data/temp/uploads", "data/uploads", "data/processed", "data/audio"]
 
 
 def _cleanup_old_files():
@@ -63,11 +63,12 @@ app.add_middleware(
 )
 
 # Ensure data directories exist
-for d in ["data/uploads", "data/processed", "data/temp", "data/audio"]:
+for d in ["data/processed", "data/temp", "data/temp/uploads", "data/audio"]:
     Path(d).mkdir(parents=True, exist_ok=True)
 
-# Serve processed files
-app.mount("/files", StaticFiles(directory="data"), name="files")
+# Serve output files only (avoid exposing uploaded inputs).
+app.mount("/files/processed", StaticFiles(directory="data/processed"), name="processed_files")
+app.mount("/files/audio", StaticFiles(directory="data/audio"), name="audio_files")
 
 # Optional: expose bundled test videos (MIT EVM samples) for reproducible UI testing.
 TEST_VIDEOS_DIR = Path(__file__).resolve().parent.parent / "test-videos"

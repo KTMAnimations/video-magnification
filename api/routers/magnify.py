@@ -6,7 +6,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 
 from api.models.schemas import ProcessingResponse
 from api.progress import ProgressSink, complete_job, error_job, start_job
-from api.upload import save_upload
+from api.upload import cleanup_upload, save_upload
 from api.services import get_evm, get_fd4mm, get_flowmag, get_stbvmm
 
 router = APIRouter()
@@ -32,56 +32,59 @@ async def magnify_motion(
     if sink:
         sink.update(stage="upload", message="Saving upload", percent=0, force=True)
     path = await save_upload(video)
-    if sink:
-        sink.update(stage="process", message="Processing video", percent=0, force=True)
-
-    engine = (engine or "stbvmm").strip().lower()
-    engine_map = {
-        "stbvmm": get_stbvmm,
-        "fd4mm": get_fd4mm,
-        "flowmag": get_flowmag,
-    }
-    if engine not in engine_map:
-        msg = f"Unknown motion engine: {engine}"
-        if job_id:
-            error_job(job_id, msg)
-        return ProcessingResponse(success=False, error=msg)
-
-    svc = engine_map[engine]()
-    if not svc.is_available():
-        if job_id:
-            error_job(job_id, f"{engine} backend is not available.")
-        return ProcessingResponse(
-            success=False, error=f"{engine} backend is not available."
-        )
     try:
-        result = await asyncio.to_thread(
-            svc.process,
-            str(path),
-            magnification=magnification,
-            mode=mode,
-            max_frames=max_frames,
-            max_side=max_side,
-            progress=sink,
-        )
-    except Exception as e:
+        if sink:
+            sink.update(stage="process", message="Processing video", percent=0, force=True)
+
+        engine = (engine or "stbvmm").strip().lower()
+        engine_map = {
+            "stbvmm": get_stbvmm,
+            "fd4mm": get_fd4mm,
+            "flowmag": get_flowmag,
+        }
+        if engine not in engine_map:
+            msg = f"Unknown motion engine: {engine}"
+            if job_id:
+                error_job(job_id, msg)
+            return ProcessingResponse(success=False, error=msg)
+
+        svc = engine_map[engine]()
+        if not svc.is_available():
+            if job_id:
+                error_job(job_id, f"{engine} backend is not available.")
+            return ProcessingResponse(
+                success=False, error=f"{engine} backend is not available."
+            )
+        try:
+            result = await asyncio.to_thread(
+                svc.process,
+                str(path),
+                magnification=magnification,
+                mode=mode,
+                max_frames=max_frames,
+                max_side=max_side,
+                progress=sink,
+            )
+        except Exception as e:
+            if job_id:
+                error_job(job_id, f"{type(e).__name__}: {e}")
+            raise
+        result.processing_time_seconds = time.time() - t0
         if job_id:
-            error_job(job_id, f"{type(e).__name__}: {e}")
-        raise
-    result.processing_time_seconds = time.time() - t0
-    if job_id:
-        if result.success:
-            complete_job(job_id, message="Done")
-        else:
-            error_job(job_id, result.error or "Processing failed")
-    return ProcessingResponse(
-        success=result.success,
-        output_url=f"/files/processed/{result.output_path}" if result.output_path else None,
-        data=result.data,
-        error=result.error,
-        warnings=result.warnings,
-        processing_time_seconds=result.processing_time_seconds,
-    )
+            if result.success:
+                complete_job(job_id, message="Done")
+            else:
+                error_job(job_id, result.error or "Processing failed")
+        return ProcessingResponse(
+            success=result.success,
+            output_url=f"/files/processed/{result.output_path}" if result.output_path else None,
+            data=result.data,
+            error=result.error,
+            warnings=result.warnings,
+            processing_time_seconds=result.processing_time_seconds,
+        )
+    finally:
+        cleanup_upload(path)
 
 
 @router.post("/color", response_model=ProcessingResponse)
@@ -107,44 +110,47 @@ async def magnify_color(
     if sink:
         sink.update(stage="upload", message="Saving upload", percent=0, force=True)
     path = await save_upload(video)
-    if sink:
-        sink.update(stage="process", message="Processing video", percent=0, force=True)
-    svc = get_evm()
-    if not svc.is_available():
-        if job_id:
-            error_job(job_id, "EVM backend is not available.")
-        return ProcessingResponse(
-            success=False, error="EVM backend is not available."
-        )
-    roi = None
-    if roi_w > 0 and roi_h > 0:
-        roi = (roi_x, roi_y, roi_w, roi_h)
     try:
-        result = await asyncio.to_thread(
-            svc.process,
-            str(path),
-            freq_min=freq_min,
-            freq_max=freq_max,
-            amplification=amplification,
-            pyramid_levels=pyramid_levels,
-            roi=roi,
-            progress=sink,
-        )
-    except Exception as e:
+        if sink:
+            sink.update(stage="process", message="Processing video", percent=0, force=True)
+        svc = get_evm()
+        if not svc.is_available():
+            if job_id:
+                error_job(job_id, "EVM backend is not available.")
+            return ProcessingResponse(
+                success=False, error="EVM backend is not available."
+            )
+        roi = None
+        if roi_w > 0 and roi_h > 0:
+            roi = (roi_x, roi_y, roi_w, roi_h)
+        try:
+            result = await asyncio.to_thread(
+                svc.process,
+                str(path),
+                freq_min=freq_min,
+                freq_max=freq_max,
+                amplification=amplification,
+                pyramid_levels=pyramid_levels,
+                roi=roi,
+                progress=sink,
+            )
+        except Exception as e:
+            if job_id:
+                error_job(job_id, f"{type(e).__name__}: {e}")
+            raise
+        result.processing_time_seconds = time.time() - t0
         if job_id:
-            error_job(job_id, f"{type(e).__name__}: {e}")
-        raise
-    result.processing_time_seconds = time.time() - t0
-    if job_id:
-        if result.success:
-            complete_job(job_id, message="Done")
-        else:
-            error_job(job_id, result.error or "Processing failed")
-    return ProcessingResponse(
-        success=result.success,
-        output_url=f"/files/processed/{result.output_path}" if result.output_path else None,
-        data=result.data,
-        error=result.error,
-        warnings=result.warnings,
-        processing_time_seconds=result.processing_time_seconds,
-    )
+            if result.success:
+                complete_job(job_id, message="Done")
+            else:
+                error_job(job_id, result.error or "Processing failed")
+        return ProcessingResponse(
+            success=result.success,
+            output_url=f"/files/processed/{result.output_path}" if result.output_path else None,
+            data=result.data,
+            error=result.error,
+            warnings=result.warnings,
+            processing_time_seconds=result.processing_time_seconds,
+        )
+    finally:
+        cleanup_upload(path)

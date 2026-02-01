@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from 'react';
 import type { Mode, ProcessingResponse } from '../types';
 import { resolveBackendUrl } from '../api';
 import { BVPChart } from './charts/BVPChart';
@@ -92,8 +93,14 @@ export function ResultsViewer({ mode, result, originalFile, onReset }: Props) {
 }
 
 function VideoComparisonResult({ result, originalFile }: { result: ProcessingResponse; originalFile?: File }) {
-  const originalUrl = originalFile ? URL.createObjectURL(originalFile) : null;
+  const originalUrl = useMemo(() => (originalFile ? URL.createObjectURL(originalFile) : null), [originalFile]);
   const processedUrl = result.output_url ? resolveBackendUrl(result.output_url) : undefined;
+
+  useEffect(() => {
+    return () => {
+      if (originalUrl) URL.revokeObjectURL(originalUrl);
+    };
+  }, [originalUrl]);
 
   return (
     <div className="max-w-4xl mx-auto">

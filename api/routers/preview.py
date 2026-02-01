@@ -10,7 +10,7 @@ import cv2
 from fastapi import APIRouter, File, Form, UploadFile
 
 from api.models.schemas import PreviewFrameResponse
-from api.upload import save_upload
+from api.upload import cleanup_upload, save_upload
 
 router = APIRouter()
 
@@ -83,5 +83,4 @@ async def preview_frame(
     except Exception as e:
         return PreviewFrameResponse(success=False, error=f"{type(e).__name__}: {e}")
     finally:
-        path.unlink(missing_ok=True)
-
+        cleanup_upload(path)

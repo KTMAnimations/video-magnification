@@ -26,6 +26,22 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 const MODES: Mode[] = ['motion', 'color', 'heartrate', 'realtime', 'audio'];
 
+type ProcessingProgressState = {
+  jobId: string;
+  uploadPercent: number;
+  backend: JobProgressResponse | null;
+};
+
+type ModeState = {
+  stage: Stage;
+  file: File | null;
+  result: ProcessingResponse | null;
+  processingProgress: ProcessingProgressState | null;
+  cameraActive: boolean;
+  roi: ROI | undefined;
+  showROI: boolean;
+};
+
 function newJobId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -34,65 +50,125 @@ function newJobId(): string {
 function App() {
   const { health } = useBackendHealth();
   const [mode, setMode] = useState<Mode>('motion');
-  const [stage, setStage] = useState<Stage>('upload');
-  const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<ProcessingResponse | null>(null);
-  const [processingProgress, setProcessingProgress] = useState<{
-    jobId: string;
-    uploadPercent: number;
-    backend: JobProgressResponse | null;
-  } | null>(null);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [roi, setRoi] = useState<ROI | undefined>(undefined);
-  const [showROI, setShowROI] = useState(false);
+  const [modeStates, setModeStates] = useState<Record<Mode, ModeState>>(() => {
+    const initialState = (): ModeState => ({
+      stage: 'upload',
+      file: null,
+      result: null,
+      processingProgress: null,
+      cameraActive: false,
+      roi: undefined,
+      showROI: false,
+    });
+    return {
+      motion: initialState(),
+      color: initialState(),
+      heartrate: initialState(),
+      realtime: initialState(),
+      audio: initialState(),
+    };
+  });
+
+  const currentState = modeStates[mode];
+  const stage = currentState.stage;
+  const file = currentState.file;
+  const result = currentState.result;
+  const processingProgress = currentState.processingProgress;
+  const cameraActive = currentState.cameraActive;
+  const showROI = currentState.showROI;
 
   const handleModeChange = useCallback((m: Mode) => {
     setMode(m);
-    setStage('upload');
-    setFile(null);
-    setResult(null);
-    setProcessingProgress(null);
-    setCameraActive(false);
-    setRoi(undefined);
-    setShowROI(false);
   }, []);
 
   const handleFileSelect = useCallback(
     (f: File) => {
-      setFile(f);
       const config = MODE_CONFIGS[mode];
-      if (config.needsROI) {
-        setShowROI(true);
-      } else {
-        setStage('configure');
-      }
+      setModeStates((prev) => {
+        const state = prev[mode];
+        return {
+          ...prev,
+          [mode]: {
+            ...state,
+            stage: config.needsROI ? 'upload' : 'configure',
+            file: f,
+            result: null,
+            processingProgress: null,
+            cameraActive: false,
+            roi: undefined,
+            showROI: config.needsROI,
+          },
+        };
+      });
     },
     [mode],
   );
 
   const handleROISelect = useCallback((r: ROI) => {
-    setRoi(r);
-    setShowROI(false);
-    setStage('configure');
-  }, []);
+    setModeStates((prev) => {
+      const state = prev[mode];
+      return {
+        ...prev,
+        [mode]: { ...state, roi: r, showROI: false, stage: 'configure' },
+      };
+    });
+  }, [mode]);
 
   const handleROISkip = useCallback(() => {
-    setRoi(undefined);
-    setShowROI(false);
-    setStage('configure');
-  }, []);
+    setModeStates((prev) => {
+      const state = prev[mode];
+      return {
+        ...prev,
+        [mode]: { ...state, roi: undefined, showROI: false, stage: 'configure' },
+      };
+    });
+  }, [mode]);
 
   const handleCameraToggle = useCallback(() => {
-    setCameraActive((prev) => !prev);
-  }, []);
+    setModeStates((prev) => {
+      const state = prev[mode];
+      return {
+        ...prev,
+        [mode]: { ...state, cameraActive: !state.cameraActive },
+      };
+    });
+  }, [mode]);
 
   const handleProcess = useCallback(
     async (params: Record<string, unknown>) => {
-      if (!file) return;
-      setStage('processing');
+      const jobMode = mode;
+      const jobFile = modeStates[jobMode].file;
+      const jobRoi = modeStates[jobMode].roi;
+      if (!jobFile) return;
 
       const jobId = newJobId();
-      setProcessingProgress({ jobId, uploadPercent: 0, backend: null });
+      setModeStates((prev) => {
+        const state = prev[jobMode];
+        return {
+          ...prev,
+          [jobMode]: {
+            ...state,
+            stage: 'processing',
+            result: null,
+            processingProgress: { jobId, uploadPercent: 0, backend: null },
+          },
+        };
+      });
+
+      const updateJobProgress = (updater: (prev: ProcessingProgressState) => ProcessingProgressState) => {
+        setModeStates((prev) => {
+          const state = prev[jobMode];
+          const currentProgress = state.processingProgress;
+          if (!currentProgress || currentProgress.jobId !== jobId) return prev;
+          return {
+            ...prev,
+            [jobMode]: {
+              ...state,
+              processingProgress: updater(currentProgress),
+            },
+          };
+        });
+      };
 
       let stopped = false;
       let inFlight = false;
@@ -101,7 +177,7 @@ function App() {
         inFlight = true;
         try {
           const p = await getJobProgress(jobId);
-          setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, backend: p } : prev));
+          updateJobProgress((prev) => ({ ...prev, backend: p }));
         } catch {
           // Ignore transient polling errors.
         } finally {
@@ -114,10 +190,10 @@ function App() {
 
       try {
         let res: ProcessingResponse;
-        switch (mode) {
+        switch (jobMode) {
           case 'motion':
             res = await processMotion(
-              file,
+              jobFile,
               typeof params.engine === 'string' ? params.engine : 'stbvmm',
               typeof params.magnification === 'number' ? params.magnification : Number(params.magnification),
               typeof params.mode === 'string' ? params.mode : 'static',
@@ -128,7 +204,10 @@ function App() {
                 onUploadProgress: (p) => {
                   if (typeof p.percent === 'number') {
                     const percent = p.percent;
-                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
+                    updateJobProgress((prev) => ({
+                      ...prev,
+                      uploadPercent: Math.min(100, Math.max(0, percent)),
+                    }));
                   }
                 },
               },
@@ -136,37 +215,43 @@ function App() {
             break;
           case 'color':
             res = await processColor(
-              file,
+              jobFile,
               typeof params.freqMin === 'number' ? params.freqMin : Number(params.freqMin),
               typeof params.freqMax === 'number' ? params.freqMax : Number(params.freqMax),
               typeof params.amplification === 'number' ? params.amplification : Number(params.amplification),
               typeof params.pyramidLevels === 'number' ? params.pyramidLevels : Number(params.pyramidLevels),
-              roi,
+              jobRoi,
               {
                 jobId,
                 onUploadProgress: (p) => {
                   if (typeof p.percent === 'number') {
                     const percent = p.percent;
-                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
+                    updateJobProgress((prev) => ({
+                      ...prev,
+                      uploadPercent: Math.min(100, Math.max(0, percent)),
+                    }));
                   }
                 },
               },
             );
             break;
           case 'heartrate':
-            res = await processHeartRate(file, typeof params.engine === 'string' ? params.engine : 'rppg', typeof params.method === 'string' ? params.method : 'ALL', {
+            res = await processHeartRate(jobFile, typeof params.engine === 'string' ? params.engine : 'rppg', typeof params.method === 'string' ? params.method : 'ALL', {
               jobId,
               onUploadProgress: (p) => {
                 if (typeof p.percent === 'number') {
                   const percent = p.percent;
-                  setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
+                  updateJobProgress((prev) => ({
+                    ...prev,
+                    uploadPercent: Math.min(100, Math.max(0, percent)),
+                  }));
                 }
               },
             });
             break;
           case 'realtime':
             res = await processRealtime(
-              file,
+              jobFile,
               typeof params.method === 'string' ? params.method : 'cpu_POS',
               typeof params.winsize === 'number' ? params.winsize : Number(params.winsize),
               {
@@ -174,19 +259,25 @@ function App() {
                 onUploadProgress: (p) => {
                   if (typeof p.percent === 'number') {
                     const percent = p.percent;
-                    setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
+                    updateJobProgress((prev) => ({
+                      ...prev,
+                      uploadPercent: Math.min(100, Math.max(0, percent)),
+                    }));
                   }
                 },
               },
             );
             break;
           case 'audio':
-            res = await recoverAudio(file, roi, {
+            res = await recoverAudio(jobFile, jobRoi, {
               jobId,
               onUploadProgress: (p) => {
                 if (typeof p.percent === 'number') {
                   const percent = p.percent;
-                  setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: Math.min(100, Math.max(0, percent)) } : prev));
+                  updateJobProgress((prev) => ({
+                    ...prev,
+                    uploadPercent: Math.min(100, Math.max(0, percent)),
+                  }));
                 }
               },
             });
@@ -197,9 +288,20 @@ function App() {
 
         stopped = true;
         clearInterval(pollId);
-        setProcessingProgress((prev) => (prev?.jobId === jobId ? { ...prev, uploadPercent: 100 } : prev));
-        setResult(res);
-        setStage('results');
+        setModeStates((prev) => {
+          const state = prev[jobMode];
+          const currentProgress = state.processingProgress;
+          if (!currentProgress || currentProgress.jobId !== jobId) return prev;
+          return {
+            ...prev,
+            [jobMode]: {
+              ...state,
+              stage: 'results',
+              result: res,
+              processingProgress: { ...currentProgress, uploadPercent: 100 },
+            },
+          };
+        });
         if (!res.success) {
           showToast(res.error || 'Processing failed', 'error');
         } else if (res.warnings.length > 0) {
@@ -209,32 +311,64 @@ function App() {
         stopped = true;
         clearInterval(pollId);
         const errMsg = err instanceof Error ? err.message : 'Processing request failed';
-        setResult({
+        const failure: ProcessingResponse = {
           success: false,
           error: errMsg,
           warnings: [],
           processing_time_seconds: 0,
+        };
+        setModeStates((prev) => {
+          const state = prev[jobMode];
+          const currentProgress = state.processingProgress;
+          if (!currentProgress || currentProgress.jobId !== jobId) return prev;
+          return {
+            ...prev,
+            [jobMode]: {
+              ...state,
+              stage: 'results',
+              result: failure,
+              processingProgress: { ...currentProgress, uploadPercent: 100 },
+            },
+          };
         });
-        setStage('results');
         showToast(errMsg, 'error');
       }
     },
-    [file, mode, roi],
+    [mode, modeStates],
   );
 
   const handleReset = useCallback(() => {
-    setStage('upload');
-    setFile(null);
-    setResult(null);
-    setProcessingProgress(null);
-    setRoi(undefined);
-    setShowROI(false);
-  }, []);
+    setModeStates((prev) => {
+      const state = prev[mode];
+      return {
+        ...prev,
+        [mode]: {
+          ...state,
+          stage: 'upload',
+          file: null,
+          result: null,
+          processingProgress: null,
+          cameraActive: false,
+          roi: undefined,
+          showROI: false,
+        },
+      };
+    });
+  }, [mode]);
 
   const renderMain = () => {
     // Webcam mode takes over the main panel
     if (cameraActive && mode === 'realtime') {
-      return <WebcamPanel onStop={() => setCameraActive(false)} />;
+      return (
+        <WebcamPanel
+          onStop={() =>
+            setModeStates((prev) => ({
+              ...prev,
+              realtime: { ...prev.realtime, cameraActive: false },
+            }))
+          }
+        />
+      );
     }
 
     if (showROI && file) {
@@ -273,15 +407,15 @@ function App() {
             {MODES.map((m) => {
               const config = MODE_CONFIGS[m];
               const backend = health?.backends?.[config.backendKey];
-              const available = backend?.available ?? false;
+              const usable = backend ? (backend.usable ?? backend.available) : false;
 
               return (
                 <TabsTrigger
                   key={m}
                   value={m}
-                  disabled={!available && !!health}
+                  disabled={!usable && !!health}
                   className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary gap-1.5 text-xs px-3"
-                  title={!available && health ? `${config.label} backend unavailable` : config.description}
+                  title={!usable && health ? `${config.label} backend unavailable` : config.description}
                 >
                   {ICON_MAP[config.icon]}
                   {config.label}

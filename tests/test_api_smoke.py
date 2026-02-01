@@ -92,7 +92,14 @@ def test_health_smoke():
     for info in payload["backends"].values():
         assert "label" in info
         assert "available" in info
+        assert "usable" in info
+        assert "using_fallback" in info
+        assert "fallback" in info
         assert "error" in info
+        if info["using_fallback"]:
+            assert info["usable"] is True
+            assert info["available"] is False
+            assert info["fallback"]
 
 
 def test_progress_endpoint_not_found():
@@ -101,6 +108,49 @@ def test_progress_endpoint_not_found():
     assert res.status_code == 200
     payload = res.json()
     assert payload["status"] == "not_found"
+
+
+def test_uploaded_videos_are_cleaned_up_after_processing(monkeypatch):
+    with tempfile.TemporaryDirectory(prefix="vmag-upload-dir-") as tmp:
+        upload_dir = Path(tmp)
+        monkeypatch.setenv("VMAG_UPLOAD_DIR", str(upload_dir))
+
+        frames = _make_pulse_frames(n_frames=30, fps=30)
+        mp4 = _write_mp4(frames, fps=30)
+        client = TestClient(app)
+
+        res = client.post(
+            "/magnify/color",
+            files={"video": ("input.mp4", io.BytesIO(_read_file_bytes(mp4)), "video/mp4")},
+            data={"freq_min": "0.75", "freq_max": "3.0", "amplification": "30", "pyramid_levels": "4"},
+        )
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["success"] is True
+
+        assert list(upload_dir.iterdir()) == []
+
+
+def test_uploaded_videos_are_cleaned_up_on_error(monkeypatch):
+    with tempfile.TemporaryDirectory(prefix="vmag-upload-dir-") as tmp:
+        upload_dir = Path(tmp)
+        monkeypatch.setenv("VMAG_UPLOAD_DIR", str(upload_dir))
+
+        frames = _make_pulse_frames(n_frames=10, fps=30)
+        mp4 = _write_mp4(frames, fps=30)
+        client = TestClient(app)
+
+        res = client.post(
+            "/magnify/motion",
+            files={"video": ("input.mp4", io.BytesIO(_read_file_bytes(mp4)), "video/mp4")},
+            data={"engine": "nope"},
+        )
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload["success"] is False
+        assert "Unknown motion engine" in (payload.get("error") or "")
+
+        assert list(upload_dir.iterdir()) == []
 
 
 def test_color_magnify_with_roi():
@@ -394,7 +444,8 @@ def test_mit_motion_magnify_baby_fast_preview_smoke():
 def _skip_if_backend_unavailable(client: TestClient, key: str):
     health = client.get("/health").json()
     info = health.get("backends", {}).get(key, {})
-    if not info or not info.get("available", False):
+    usable = bool(info.get("usable", info.get("available", False)))
+    if not info or not usable:
         pytest.skip(f"{key} backend unavailable: {info.get('error')}")
 
 
