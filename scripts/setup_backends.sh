@@ -55,4 +55,47 @@ else
     echo "Visual-Mic already cloned."
 fi
 
+# FD4MM (CVPR 2024)
+if [ ! -d "backends/FD4MM" ]; then
+    echo "Cloning FD4MM..."
+    git clone https://github.com/ifei17-hfut/FD4MM.git backends/FD4MM
+else
+    echo "FD4MM already cloned."
+fi
+
+# FlowMag (NeurIPS 2023)
+if [ ! -d "backends/flowmag" ]; then
+    echo "Cloning flowmag..."
+    git clone https://github.com/dangeng/flowmag.git backends/flowmag
+else
+    echo "flowmag already cloned."
+fi
+
+# RhythmMamba (AAAI 2025)
+if [ ! -d "backends/RhythmMamba" ]; then
+    echo "Cloning RhythmMamba..."
+    git clone https://github.com/zizheng-guo/RhythmMamba.git backends/RhythmMamba
+else
+    echo "RhythmMamba already cloned."
+fi
+
+# FactorizePhys (NeurIPS 2024)
+if [ ! -d "backends/FactorizePhys" ]; then
+    echo "Cloning FactorizePhys..."
+    git clone https://github.com/PhysiologicAILab/FactorizePhys.git backends/FactorizePhys
+else
+    echo "FactorizePhys already cloned."
+fi
+
+# Patch FactorizePhys to avoid optional deps at import time (e.g., neurokit2).
+if [ -d "backends/FactorizePhys/.git" ] && [ -f "scripts/factorizephys.patch" ]; then
+    echo "Patching FactorizePhys (server-friendly imports)..."
+    if git -C backends/FactorizePhys apply --check "../../scripts/factorizephys.patch" >/dev/null 2>&1; then
+        git -C backends/FactorizePhys apply "../../scripts/factorizephys.patch"
+        echo "FactorizePhys patch applied."
+    else
+        echo "FactorizePhys patch not applied (already patched or upstream has diverged)."
+    fi
+fi
+
 echo "=== All repos cloned ==="

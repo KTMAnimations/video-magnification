@@ -1,22 +1,88 @@
 #!/bin/bash
 set -e
 
-CKPT_PATH="backends/STB-VMM/ckpt_e49.pth.tar"
+downloaded_any=0
 
-if [ -f "$CKPT_PATH" ]; then
-    echo "Checkpoint already exists at $CKPT_PATH"
-    exit 0
-fi
+echo "=== Downloading / checking model weights ==="
 
-echo "Downloading STB-VMM checkpoint from HuggingFace..."
-mkdir -p backends/STB-VMM
-
-# Try huggingface-cli first, then curl
-if command -v huggingface-cli &> /dev/null; then
-    huggingface-cli download raoulritter/STB-VMM-Simplification ckpt_e49.pth.tar --local-dir backends/STB-VMM
+##
+## STB-VMM
+##
+STBVMM_CKPT_PATH="backends/STB-VMM/ckpt_e49.pth.tar"
+if [ -f "$STBVMM_CKPT_PATH" ]; then
+    echo "STB-VMM checkpoint already exists at $STBVMM_CKPT_PATH"
 else
-    curl -L "https://huggingface.co/raoulritter/STB-VMM-Simplification/resolve/main/ckpt_e49.pth.tar" \
-        -o "$CKPT_PATH"
+    echo "Downloading STB-VMM checkpoint from HuggingFace..."
+    mkdir -p backends/STB-VMM
+    # Try huggingface-cli first, then curl
+    if command -v huggingface-cli &> /dev/null; then
+        huggingface-cli download raoulritter/STB-VMM-Simplification ckpt_e49.pth.tar --local-dir backends/STB-VMM
+    else
+        curl -L "https://huggingface.co/raoulritter/STB-VMM-Simplification/resolve/main/ckpt_e49.pth.tar" \
+            -o "$STBVMM_CKPT_PATH"
+    fi
+    downloaded_any=1
+    echo "STB-VMM checkpoint downloaded to $STBVMM_CKPT_PATH"
 fi
 
-echo "Checkpoint downloaded to $CKPT_PATH"
+##
+## FlowMag
+##
+FLOWMAG_DIR="backends/flowmag"
+FLOWMAG_RAFT_CKPT="$FLOWMAG_DIR/checkpoints/raft_chkpt_00140.pth"
+if [ -f "$FLOWMAG_RAFT_CKPT" ]; then
+    echo "FlowMag checkpoint already exists at $FLOWMAG_RAFT_CKPT"
+else
+    if [ -d "$FLOWMAG_DIR" ]; then
+        echo "Downloading FlowMag checkpoints (Google Drive)..."
+        if command -v gdown &> /dev/null; then
+            (cd "$FLOWMAG_DIR" && bash checkpoints/download_models.sh)
+            downloaded_any=1
+        elif python -c "import gdown" &> /dev/null; then
+            (cd "$FLOWMAG_DIR" && python -m gdown 1ESSaea-Roe1feFugPFycW5Dd7QCg2ZXR -O checkpoints/raft_chkpt_00140.pth)
+            (cd "$FLOWMAG_DIR" && python -m gdown 1m-nE_-3AJ549W3Yemnrm4XeR28tP1sUM -O checkpoints/arflow_chkpt_00140.pth)
+            downloaded_any=1
+        else
+            echo "FlowMag weights require gdown. Install with: pip install gdown"
+        fi
+    else
+        echo "FlowMag repo not found at $FLOWMAG_DIR (run scripts/setup_backends.sh first)."
+    fi
+fi
+
+##
+## RhythmMamba (weights live in the repo under PreTrainedModels/)
+##
+RHYTHM_DIR="backends/RhythmMamba"
+RHYTHM_CKPT="$RHYTHM_DIR/PreTrainedModels/UBFC_cross_RhythmMamba.pth"
+if [ -f "$RHYTHM_CKPT" ]; then
+    echo "RhythmMamba pretrained model found at $RHYTHM_CKPT"
+else
+    if [ -d "$RHYTHM_DIR" ]; then
+        echo "RhythmMamba repo present, but pretrained weights missing at $RHYTHM_CKPT"
+    else
+        echo "RhythmMamba repo not found at $RHYTHM_DIR (run scripts/setup_backends.sh first)."
+    fi
+fi
+
+##
+## FactorizePhys (weights are also in-repo, but we can download a known-good checkpoint directly)
+##
+FACTOR_DIR="backends/FactorizePhys"
+FACTOR_CKPT="$FACTOR_DIR/final_model_release/PURE_FactorizePhys_FSAM_Res.pth"
+if [ -f "$FACTOR_CKPT" ]; then
+    echo "FactorizePhys checkpoint already exists at $FACTOR_CKPT"
+else
+    echo "Downloading FactorizePhys checkpoint (PURE_FactorizePhys_FSAM_Res.pth) from GitHub..."
+    mkdir -p "$FACTOR_DIR/final_model_release"
+    curl -L "https://raw.githubusercontent.com/PhysiologicAILab/FactorizePhys/main/final_model_release/PURE_FactorizePhys_FSAM_Res.pth" \
+        -o "$FACTOR_CKPT"
+    downloaded_any=1
+    echo "FactorizePhys checkpoint downloaded to $FACTOR_CKPT"
+fi
+
+if [ "$downloaded_any" -eq 0 ]; then
+    echo "All requested checkpoints already present."
+fi
+
+echo "=== Done ==="

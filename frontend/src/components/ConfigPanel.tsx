@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { Mode } from '../types';
+import { useEffect, useState } from 'react';
+import type { HealthData, Mode } from '../types';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -11,6 +11,7 @@ interface Props {
   mode: Mode;
   onSubmit: (params: Record<string, unknown>) => void;
   fileName?: string;
+  health?: HealthData | null;
 }
 
 const FREQUENCY_PRESETS = [
@@ -22,8 +23,9 @@ const FREQUENCY_PRESETS = [
 const RPPG_METHODS = ['POS_WANG', 'CHROME_DEHAAN', 'ICA_POH', 'GREEN', 'LGI', 'PBV', 'OMIT', 'ALL'];
 const PYVHR_METHODS = ['cpu_POS', 'cpu_CHROM', 'cpu_GREEN', 'cpu_ICA', 'cpu_PCA', 'cpu_LGI', 'cpu_PBV', 'cpu_OMIT', 'cpu_SSR'];
 
-export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
+export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
   // Motion params
+  const [motionEngine, setMotionEngine] = useState('stbvmm');
   const [magnification, setMagnification] = useState(20);
   const [motionMode, setMotionMode] = useState('static');
   const [motionFastPreview, setMotionFastPreview] = useState(false);
@@ -36,14 +38,36 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
   const [pyramidLevels, setPyramidLevels] = useState(4);
 
   // Vitals params
+  const [heartrateEngine, setHeartrateEngine] = useState('rppg');
   const [rppgMethod, setRppgMethod] = useState('ALL');
   const [pyvhrMethod, setPyvhrMethod] = useState('cpu_POS');
   const [winsize, setWinsize] = useState(5);
+
+  const isBackendAvailable = (key: string): boolean => {
+    if (!health) return true;
+    return !!health.backends?.[key]?.available;
+  };
+
+  // Auto-switch to the first available engine when health arrives/changes.
+  useEffect(() => {
+    if (!health) return;
+
+    if (mode === 'motion' && !isBackendAvailable(motionEngine)) {
+      const first = ['stbvmm', 'fd4mm', 'flowmag'].find(isBackendAvailable);
+      if (first) setMotionEngine(first);
+    }
+
+    if (mode === 'heartrate' && !isBackendAvailable(heartrateEngine)) {
+      const first = ['rppg', 'rhythm_mamba', 'factorizephys'].find(isBackendAvailable);
+      if (first) setHeartrateEngine(first);
+    }
+  }, [health, mode, motionEngine, heartrateEngine]);
 
   const handleSubmit = () => {
     switch (mode) {
       case 'motion':
         onSubmit({
+          engine: motionEngine,
           magnification,
           mode: motionMode,
           maxFrames: motionFastPreview ? 120 : 0,
@@ -54,7 +78,7 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
         onSubmit({ freqMin, freqMax, amplification, pyramidLevels });
         break;
       case 'heartrate':
-        onSubmit({ method: rppgMethod });
+        onSubmit({ engine: heartrateEngine, method: rppgMethod });
         break;
       case 'realtime':
         onSubmit({ method: pyvhrMethod, winsize });
@@ -84,6 +108,21 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
         <CardContent className="space-y-5">
           {mode === 'motion' && (
             <>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
+                  Model
+                </label>
+                <Select value={motionEngine} onValueChange={setMotionEngine}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="stbvmm" disabled={!!health && !isBackendAvailable('stbvmm')}>STB-VMM</SelectItem>
+                    <SelectItem value="fd4mm" disabled={!!health && !isBackendAvailable('fd4mm')}>FD4MM</SelectItem>
+                    <SelectItem value="flowmag" disabled={!!health && !isBackendAvailable('flowmag')}>FlowMag</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-2">
                   Magnification Factor: <Badge variant="secondary">{magnification}x</Badge>
@@ -204,21 +243,40 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
           )}
 
           {mode === 'heartrate' && (
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-2">
-                rPPG Method
-              </label>
-              <Select value={rppgMethod} onValueChange={setRppgMethod}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {RPPG_METHODS.map((m) => (
-                    <SelectItem key={m} value={m}>{m === 'ALL' ? 'ALL (Compare)' : m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-2">
+                  Model
+                </label>
+                <Select value={heartrateEngine} onValueChange={setHeartrateEngine}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rppg" disabled={!!health && !isBackendAvailable('rppg')}>rPPG-Toolbox (Unsupervised)</SelectItem>
+                    <SelectItem value="rhythm_mamba" disabled={!!health && !isBackendAvailable('rhythm_mamba')}>RhythmMamba</SelectItem>
+                    <SelectItem value="factorizephys" disabled={!!health && !isBackendAvailable('factorizephys')}>FactorizePhys</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {heartrateEngine === 'rppg' && (
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-2">
+                    rPPG Method
+                  </label>
+                  <Select value={rppgMethod} onValueChange={setRppgMethod}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RPPG_METHODS.map((m) => (
+                        <SelectItem key={m} value={m}>{m === 'ALL' ? 'ALL (Compare)' : m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </>
           )}
 
           {mode === 'realtime' && (

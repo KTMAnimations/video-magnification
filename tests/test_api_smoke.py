@@ -9,6 +9,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from api.main import app
@@ -74,7 +75,19 @@ def test_health_smoke():
     assert res.status_code == 200
     payload = res.json()
     assert payload["status"] == "ok"
-    assert set(payload["backends"].keys()) == {"evm", "pyvhr", "rppg", "stbvmm", "visualmic"}
+    assert set(payload["backends"].keys()) == {
+        "motion",
+        "evm",
+        "fd4mm",
+        "flowmag",
+        "heartrate",
+        "factorizephys",
+        "pyvhr",
+        "rppg",
+        "rhythm_mamba",
+        "stbvmm",
+        "visualmic",
+    }
     for info in payload["backends"].values():
         assert "label" in info
         assert "available" in info
@@ -352,3 +365,86 @@ def test_mit_motion_magnify_baby_fast_preview_smoke():
     out_path = _local_path_from_files_url(payload["output_url"])
     assert out_path.exists()
     assert out_path.stat().st_size > 0
+
+
+def _skip_if_backend_unavailable(client: TestClient, key: str):
+    health = client.get("/health").json()
+    info = health.get("backends", {}).get(key, {})
+    if not info or not info.get("available", False):
+        pytest.skip(f"{key} backend unavailable: {info.get('error')}")
+
+
+def test_mit_motion_flowmag_engine_smoke():
+    client = TestClient(app)
+    _skip_if_backend_unavailable(client, "flowmag")
+
+    src = MIT_EVM_SOURCE_DIR / "baby.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    res = client.post(
+        "/magnify/motion",
+        files={"video": ("baby.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+        data={"engine": "flowmag", "magnification": "10", "mode": "static", "max_frames": "30"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    assert payload["output_url"]
+    out_path = _local_path_from_files_url(payload["output_url"])
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_mit_motion_fd4mm_engine_smoke():
+    client = TestClient(app)
+    _skip_if_backend_unavailable(client, "fd4mm")
+
+    src = MIT_EVM_SOURCE_DIR / "baby.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    res = client.post(
+        "/magnify/motion",
+        files={"video": ("baby.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+        data={"engine": "fd4mm", "magnification": "10", "mode": "static", "max_frames": "30"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    assert payload["output_url"]
+    out_path = _local_path_from_files_url(payload["output_url"])
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_mit_heartrate_factorizephys_engine_smoke():
+    client = TestClient(app)
+    _skip_if_backend_unavailable(client, "factorizephys")
+
+    src = MIT_EVM_SOURCE_DIR / "face.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    res = client.post(
+        "/vitals/heartrate",
+        files={"video": ("face.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+        data={"engine": "factorizephys", "method": "ALL"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    bpm = float(payload["data"]["bpm"])
+    assert 40.0 <= bpm <= 180.0
+
+
+def test_mit_heartrate_rhythmmamba_engine_smoke():
+    client = TestClient(app)
+    _skip_if_backend_unavailable(client, "rhythm_mamba")
+
+    src = MIT_EVM_SOURCE_DIR / "face.mp4"
+    assert src.exists(), f"Missing MIT test video: {src}"
+    res = client.post(
+        "/vitals/heartrate",
+        files={"video": ("face.mp4", io.BytesIO(_read_file_bytes(src)), "video/mp4")},
+        data={"engine": "rhythm_mamba", "method": "ALL"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    bpm = float(payload["data"]["bpm"])
+    assert 40.0 <= bpm <= 180.0

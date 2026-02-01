@@ -118,6 +118,7 @@ function App() {
           case 'motion':
             res = await processMotion(
               file,
+              typeof params.engine === 'string' ? params.engine : 'stbvmm',
               typeof params.magnification === 'number' ? params.magnification : Number(params.magnification),
               typeof params.mode === 'string' ? params.mode : 'static',
               typeof params.maxFrames === 'number' ? params.maxFrames : (params.maxFrames ? Number(params.maxFrames) : undefined),
@@ -153,7 +154,7 @@ function App() {
             );
             break;
           case 'heartrate':
-            res = await processHeartRate(file, typeof params.method === 'string' ? params.method : 'ALL', {
+            res = await processHeartRate(file, typeof params.engine === 'string' ? params.engine : 'rppg', typeof params.method === 'string' ? params.method : 'ALL', {
               jobId,
               onUploadProgress: (p) => {
                 if (typeof p.percent === 'number') {
@@ -251,7 +252,7 @@ function App() {
           />
         );
       case 'configure':
-        return <ConfigPanel mode={mode} onSubmit={handleProcess} fileName={file?.name} />;
+        return <ConfigPanel mode={mode} onSubmit={handleProcess} fileName={file?.name} health={health} />;
       case 'processing':
         return <ProcessingIndicator progress={processingProgress} />;
       case 'results':

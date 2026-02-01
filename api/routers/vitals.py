@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, Form, UploadFile, WebSocket, WebSocketDisco
 from api.models.schemas import ProcessingResponse
 from api.progress import ProgressSink, complete_job, error_job, start_job
 from api.upload import save_upload
-from api.services import get_rppg, get_pyvhr
+from api.services import get_factorizephys, get_rhythm_mamba, get_rppg, get_pyvhr
 
 router = APIRouter()
 
@@ -18,10 +18,11 @@ router = APIRouter()
 @router.post("/heartrate", response_model=ProcessingResponse)
 async def extract_heartrate(
     video: UploadFile = File(...),
+    engine: str = Form("rppg"),
     method: str = Form("ALL"),
     job_id: str = Form(""),
 ):
-    """Heart rate extraction using rPPG-Toolbox unsupervised methods."""
+    """Heart rate extraction using a selectable engine."""
     t0 = time.time()
     job_id = (job_id or "").strip()
     sink = ProgressSink(job_id) if job_id else None
@@ -33,15 +34,39 @@ async def extract_heartrate(
     path = await save_upload(video)
     if sink:
         sink.update(stage="process", message="Processing video", percent=0, force=True)
-    svc = get_rppg()
-    if not svc.is_available():
+
+    engine = (engine or "rppg").strip().lower()
+    if engine == "rppg":
+        svc = get_rppg()
+        if not svc.is_available():
+            if job_id:
+                error_job(job_id, "rPPG-Toolbox backend is not available.")
+            return ProcessingResponse(
+                success=False, error="rPPG-Toolbox backend is not available."
+            )
+    elif engine == "rhythm_mamba":
+        svc = get_rhythm_mamba()
+        if not svc.is_available():
+            if job_id:
+                error_job(job_id, "RhythmMamba backend is not available.")
+            return ProcessingResponse(success=False, error="RhythmMamba backend is not available.")
+    elif engine == "factorizephys":
+        svc = get_factorizephys()
+        if not svc.is_available():
+            if job_id:
+                error_job(job_id, "FactorizePhys backend is not available.")
+            return ProcessingResponse(success=False, error="FactorizePhys backend is not available.")
+    else:
+        msg = f"Unknown heartrate engine: {engine}"
         if job_id:
-            error_job(job_id, "rPPG-Toolbox backend is not available.")
-        return ProcessingResponse(
-            success=False, error="rPPG-Toolbox backend is not available."
-        )
+            error_job(job_id, msg)
+        return ProcessingResponse(success=False, error=msg)
+
     try:
-        result = await asyncio.to_thread(svc.process, str(path), method=method, progress=sink)
+        if engine == "rppg":
+            result = await asyncio.to_thread(svc.process, str(path), method=method, progress=sink)
+        else:
+            result = await asyncio.to_thread(svc.process, str(path), progress=sink)
     except Exception as e:
         if job_id:
             error_job(job_id, f"{type(e).__name__}: {e}")

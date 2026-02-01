@@ -11,13 +11,16 @@ numpy>=1.24.0,<2
 
 # Signal processing
 scipy>=1.11.0
+pyrtools>=1.0.0
 
 # Eulerian Video Magnification
-eulerian-magnification>=0.3.0
+eulerian-magnification==0.22
 
 # PyTorch (MPS auto-detect on Apple Silicon)
 torch>=2.1.0
 torchvision>=0.16.0
+einops>=0.7.0
+omegaconf>=2.3.0
 
 # Audio
 soundfile>=0.12.0

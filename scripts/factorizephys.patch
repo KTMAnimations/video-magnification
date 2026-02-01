@@ -1,0 +1,10 @@
+diff --git a/neural_methods/model/FactorizePhys/FSAM.py b/neural_methods/model/FactorizePhys/FSAM.py
+--- a/neural_methods/model/FactorizePhys/FSAM.py
++++ b/neural_methods/model/FactorizePhys/FSAM.py
+@@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+ from torch.nn.modules.batchnorm import _BatchNorm
+ import numpy as np
+-import neurokit2 as nk

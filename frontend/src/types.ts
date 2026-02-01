@@ -52,8 +52,8 @@ export interface ModeConfig {
 export const MODE_CONFIGS: Record<Mode, ModeConfig> = {
   motion: {
     label: 'Motion',
-    description: 'Amplify subtle motions using STB-VMM neural network',
-    backendKey: 'stbvmm',
+    description: 'Amplify subtle motions (select a model)',
+    backendKey: 'motion',
     needsROI: false,
     icon: 'Move',
   },
@@ -66,8 +66,8 @@ export const MODE_CONFIGS: Record<Mode, ModeConfig> = {
   },
   heartrate: {
     label: 'Heart Rate',
-    description: 'Extract pulse from face video using rPPG algorithms',
-    backendKey: 'rppg',
+    description: 'Extract pulse from face video (select a model)',
+    backendKey: 'heartrate',
     needsROI: false,
     icon: 'HeartPulse',
   },

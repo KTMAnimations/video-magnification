@@ -26,7 +26,7 @@ function buildUrl(origin: BackendOrigin, path: string): string {
 function candidateOrigins(): BackendOrigin[] {
   if (ENV_BACKEND_ORIGIN) return [ENV_BACKEND_ORIGIN];
   if (import.meta.env.DEV) return [null]; // rely on Vite proxy
-  return [normalizeOrigin(window.location.origin), 'http://localhost:8001', 'http://127.0.0.1:8001'];
+  return [normalizeOrigin(window.location.origin), 'http://localhost:8000', 'http://127.0.0.1:8000'];
 }
 
 function shouldTryNextOrigin(origin: BackendOrigin, res: Response): boolean {
@@ -175,6 +175,7 @@ export async function checkHealth(): Promise<HealthData> {
 
 export async function processMotion(
   file: File,
+  engine: string,
   magnification: number,
   mode: string,
   maxFrames?: number,
@@ -183,6 +184,7 @@ export async function processMotion(
 ): Promise<ProcessingResponse> {
   const form = new FormData();
   form.append('video', file);
+  form.append('engine', engine);
   form.append('magnification', magnification.toString());
   form.append('mode', mode);
   if (opts?.jobId) form.append('job_id', opts.jobId);
@@ -224,11 +226,13 @@ export async function processColor(
 
 export async function processHeartRate(
   file: File,
+  engine: string,
   method: string,
   opts?: UploadOptions,
 ): Promise<ProcessingResponse> {
   const form = new FormData();
   form.append('video', file);
+  form.append('engine', engine);
   form.append('method', method);
   if (opts?.jobId) form.append('job_id', opts.jobId);
   const payload = (await apiUploadJson('/vitals/heartrate', form, opts)) as ProcessingResponse;
