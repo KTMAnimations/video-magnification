@@ -34,9 +34,6 @@ Thumbs.db
 .env
 .env.local
 
-# Plan file
-video-magnification-webapp-plan.md
-
 # Large test videos (>100MB, exceeds GitHub limit)
 test-videos/**/*.avi
 
