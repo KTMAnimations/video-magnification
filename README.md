@@ -23,7 +23,7 @@ pip install -r requirements.txt
 cd frontend && npm install
 
 # 4) Run
-uvicorn api.main:app --reload --port 8000
+uvicorn api.main:app --reload --port 8001
 # (new terminal)
 cd frontend && npm run dev
 ```

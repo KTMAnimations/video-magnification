@@ -46,6 +46,9 @@ Thumbs.db
 # Plan file
 video-magnification-webapp-plan.md
 
+# Large test videos (>100MB, exceeds GitHub limit)
+test-videos/kitkat-mary-60hz.avi
+
 # Playwright/MCP artifacts
 .playwright-mcp/e2e-*.png
 .playwright-mcp/uvicorn.log
