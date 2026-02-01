@@ -4,12 +4,6 @@ data/processed/
 data/temp/
 data/audio/
 
-# Model weights
-*.pth
-*.pth.tar
-*.ckpt
-*.pt
-
 # Python
 __pycache__/
 *.py[cod]
