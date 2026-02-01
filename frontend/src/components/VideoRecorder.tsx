@@ -239,6 +239,10 @@ export function VideoRecorder({ onRecordingComplete }: Props) {
   useEffect(() => {
     if (!supported) return;
 
+    // Reset on (re-)mount so React 18 StrictMode double-mount doesn't
+    // leave disposedRef stuck at true, which blocks the stop handler.
+    disposedRef.current = false;
+
     const onBeforeUnload = () => {
       disposedRef.current = true;
       stopTimer();
