@@ -2,6 +2,7 @@
 set -e
 
 downloaded_any=0
+download_failures=0
 
 echo "=== Downloading / checking model weights ==="
 
@@ -26,6 +27,16 @@ else
 fi
 
 ##
+## FD4MM (weights are not bundled / may not be publicly hosted)
+##
+FD4MM_CKPT_PATH="backends/FD4MM/fd4mm.pth"
+if [ -f "$FD4MM_CKPT_PATH" ]; then
+    echo "FD4MM checkpoint found at $FD4MM_CKPT_PATH"
+else
+    echo "FD4MM checkpoint missing at $FD4MM_CKPT_PATH (place it there or set VMAG_FD4MM_CHECKPOINT)."
+fi
+
+##
 ## FlowMag
 ##
 FLOWMAG_DIR="backends/flowmag"
@@ -35,18 +46,39 @@ if [ -f "$FLOWMAG_RAFT_CKPT" ]; then
 else
     if [ -d "$FLOWMAG_DIR" ]; then
         echo "Downloading FlowMag checkpoints (Google Drive)..."
+        flowmag_status=0
         if command -v gdown &> /dev/null; then
+            # Don't abort the whole script if Google Drive denies access/quota.
+            set +e
             (cd "$FLOWMAG_DIR" && bash checkpoints/download_models.sh)
-            downloaded_any=1
+            flowmag_status=$?
+            set -e
         elif python -c "import gdown" &> /dev/null; then
+            set +e
             (cd "$FLOWMAG_DIR" && python -m gdown 1ESSaea-Roe1feFugPFycW5Dd7QCg2ZXR -O checkpoints/raft_chkpt_00140.pth)
-            (cd "$FLOWMAG_DIR" && python -m gdown 1m-nE_-3AJ549W3Yemnrm4XeR28tP1sUM -O checkpoints/arflow_chkpt_00140.pth)
-            downloaded_any=1
+            flowmag_status=$?
+            if [ "$flowmag_status" -eq 0 ]; then
+                (cd "$FLOWMAG_DIR" && python -m gdown 1m-nE_-3AJ549W3Yemnrm4XeR28tP1sUM -O checkpoints/arflow_chkpt_00140.pth)
+                flowmag_status=$?
+            fi
+            set -e
         else
+            flowmag_status=1
             echo "FlowMag weights require gdown. Install with: pip install gdown"
+        fi
+
+        if [ -f "$FLOWMAG_RAFT_CKPT" ]; then
+            downloaded_any=1
+            echo "FlowMag checkpoint downloaded to $FLOWMAG_RAFT_CKPT"
+        else
+            download_failures=1
+            if [ "$flowmag_status" -ne 0 ]; then
+                echo "FlowMag weights download failed (gdown error). This is often due to Google Drive permissions/quota."
+            fi
         fi
     else
         echo "FlowMag repo not found at $FLOWMAG_DIR (run scripts/setup_backends.sh first)."
+        download_failures=1
     fi
 fi
 
@@ -83,6 +115,10 @@ fi
 
 if [ "$downloaded_any" -eq 0 ]; then
     echo "All requested checkpoints already present."
+fi
+
+if [ "$download_failures" -ne 0 ]; then
+    echo "WARNING: Some checkpoints could not be downloaded. See messages above."
 fi
 
 echo "=== Done ==="

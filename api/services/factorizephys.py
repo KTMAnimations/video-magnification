@@ -45,8 +45,10 @@ class FactorizePhysService(BaseService):
             import torch  # noqa: F401
 
             if not BACKENDS_DIR.exists():
+                self._last_error = f"FactorizePhys repo not found at {BACKENDS_DIR} (run scripts/setup_backends.sh)"
                 return False
             if not _checkpoint_path().exists():
+                self._last_error = f"Missing checkpoint: {_checkpoint_path()} (run scripts/download_weights.sh)"
                 return False
 
             if str(BACKENDS_DIR) not in sys.path:
@@ -214,4 +216,3 @@ class FactorizePhysService(BaseService):
         psd_power = (yf[psd_mask] ** 2).tolist()
 
         return bpm, confidence, psd_freqs, psd_power
-

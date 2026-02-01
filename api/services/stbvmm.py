@@ -54,8 +54,10 @@ class STBVMMService(BaseService):
         try:
             import torch  # noqa: F401
             if not BACKENDS_DIR.exists():
+                self._last_error = f"STB-VMM repo not found at {BACKENDS_DIR} (run scripts/setup_backends.sh)"
                 return False
             if not CHECKPOINT_PATH.exists():
+                self._last_error = f"Missing checkpoint: {CHECKPOINT_PATH} (run scripts/download_weights.sh)"
                 return False
             self._last_error = None
             return True

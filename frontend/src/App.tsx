@@ -408,6 +408,10 @@ function App() {
               const config = MODE_CONFIGS[m];
               const backend = health?.backends?.[config.backendKey];
               const usable = backend ? (backend.usable ?? backend.available) : false;
+              const title =
+                !usable && health
+                  ? (backend?.error ? `${config.label} unavailable: ${backend.error}` : `${config.label} backend unavailable`)
+                  : config.description;
 
               return (
                 <TabsTrigger
@@ -415,7 +419,7 @@ function App() {
                   value={m}
                   disabled={!usable && !!health}
                   className="data-[state=active]:bg-primary/10 data-[state=active]:text-primary gap-1.5 text-xs px-3"
-                  title={!usable && health ? `${config.label} backend unavailable` : config.description}
+                  title={title}
                 >
                   {ICON_MAP[config.icon]}
                   {config.label}

@@ -95,8 +95,10 @@ class FlowMagService(BaseService):
             from omegaconf import OmegaConf  # noqa: F401
 
             if not BACKENDS_DIR.exists():
+                self._last_error = f"FlowMag repo not found at {BACKENDS_DIR} (run scripts/setup_backends.sh)"
                 return False
             if not _checkpoint_path().exists():
+                self._last_error = f"Missing checkpoint: {_checkpoint_path()} (run scripts/download_weights.sh)"
                 return False
             if not _config_path().exists():
                 self._last_error = f"Missing config: {_config_path()} (set VMAG_FLOWMAG_CONFIG or place file there)"

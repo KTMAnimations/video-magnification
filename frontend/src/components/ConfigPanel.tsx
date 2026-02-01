@@ -142,12 +142,20 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
                       const fallbackLabel = fallbackTo
                         ? (MOTION_ENGINES.find((e) => e.value === fallbackTo)?.label ?? fallbackTo)
                         : null;
+                      const err = info?.error;
+                      const title =
+                        disabled && err
+                          ? err
+                          : (fallbackLabel && err)
+                            ? `Native unavailable: ${err} (using fallback: ${fallbackLabel})`
+                            : (fallbackLabel ? `Using fallback: ${fallbackLabel}` : undefined);
 
                       return (
                         <SelectItem
                           key={engine.value}
                           value={engine.value}
                           disabled={disabled}
+                          title={title}
                         >
                           <span className="flex items-center gap-2">
                             <span>{engine.label}</span>
@@ -320,12 +328,20 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
                       const fallbackLabel = fallbackTo
                         ? (HEARTRATE_ENGINES.find((e) => e.value === fallbackTo)?.label ?? fallbackTo)
                         : null;
+                      const err = info?.error;
+                      const title =
+                        disabled && err
+                          ? err
+                          : (fallbackLabel && err)
+                            ? `Native unavailable: ${err} (using fallback: ${fallbackLabel})`
+                            : (fallbackLabel ? `Using fallback: ${fallbackLabel}` : undefined);
 
                       return (
                         <SelectItem
                           key={engine.value}
                           value={engine.value}
                           disabled={disabled}
+                          title={title}
                         >
                           <span className="flex items-center gap-2">
                             <span>{engine.label}</span>
