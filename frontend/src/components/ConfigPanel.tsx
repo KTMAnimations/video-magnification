@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { HealthData, Mode } from '../types';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
@@ -22,6 +22,18 @@ const FREQUENCY_PRESETS = [
 
 const RPPG_METHODS = ['POS_WANG', 'CHROME_DEHAAN', 'ICA_POH', 'GREEN', 'LGI', 'PBV', 'OMIT', 'ALL'];
 const PYVHR_METHODS = ['cpu_POS', 'cpu_CHROM', 'cpu_GREEN', 'cpu_ICA', 'cpu_PCA', 'cpu_LGI', 'cpu_PBV', 'cpu_OMIT', 'cpu_SSR'];
+
+const MOTION_ENGINES = [
+  { value: 'stbvmm', label: 'STB-VMM', note: 'Stable baseline', recommended: false },
+  { value: 'fd4mm', label: 'FD4MM', note: 'High-detail (slower)', recommended: true },
+  { value: 'flowmag', label: 'FlowMag', note: 'Optical-flow based (slower)', recommended: false },
+] as const;
+
+const HEARTRATE_ENGINES = [
+  { value: 'rppg', label: 'rPPG-Toolbox', note: 'No weights (baseline)', recommended: false },
+  { value: 'rhythm_mamba', label: 'RhythmMamba', note: 'Best accuracy (extra deps)', recommended: true },
+  { value: 'factorizephys', label: 'FactorizePhys', note: 'Strong supervised model', recommended: false },
+] as const;
 
 export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
   // Motion params
@@ -48,26 +60,22 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
     return !!health.backends?.[key]?.available;
   };
 
-  // Auto-switch to the first available engine when health arrives/changes.
-  useEffect(() => {
-    if (!health) return;
+  const resolvedMotionEngine = isBackendAvailable(motionEngine)
+    ? motionEngine
+    : (MOTION_ENGINES.find((e) => isBackendAvailable(e.value))?.value ?? motionEngine);
+  const resolvedHeartrateEngine = isBackendAvailable(heartrateEngine)
+    ? heartrateEngine
+    : (HEARTRATE_ENGINES.find((e) => isBackendAvailable(e.value))?.value ?? heartrateEngine);
 
-    if (mode === 'motion' && !isBackendAvailable(motionEngine)) {
-      const first = ['stbvmm', 'fd4mm', 'flowmag'].find(isBackendAvailable);
-      if (first) setMotionEngine(first);
-    }
-
-    if (mode === 'heartrate' && !isBackendAvailable(heartrateEngine)) {
-      const first = ['rppg', 'rhythm_mamba', 'factorizephys'].find(isBackendAvailable);
-      if (first) setHeartrateEngine(first);
-    }
-  }, [health, mode, motionEngine, heartrateEngine]);
+  const selectedMotionEngine = MOTION_ENGINES.find((e) => e.value === resolvedMotionEngine) ?? MOTION_ENGINES[0];
+  const selectedHeartrateEngine =
+    HEARTRATE_ENGINES.find((e) => e.value === resolvedHeartrateEngine) ?? HEARTRATE_ENGINES[0];
 
   const handleSubmit = () => {
     switch (mode) {
       case 'motion':
         onSubmit({
-          engine: motionEngine,
+          engine: resolvedMotionEngine,
           magnification,
           mode: motionMode,
           maxFrames: motionFastPreview ? 120 : 0,
@@ -78,7 +86,7 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
         onSubmit({ freqMin, freqMax, amplification, pyramidLevels });
         break;
       case 'heartrate':
-        onSubmit({ engine: heartrateEngine, method: rppgMethod });
+        onSubmit({ engine: resolvedHeartrateEngine, method: rppgMethod });
         break;
       case 'realtime':
         onSubmit({ method: pyvhrMethod, winsize });
@@ -112,14 +120,37 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
                 <label className="block text-xs font-medium text-muted-foreground mb-2">
                   Model
                 </label>
-                <Select value={motionEngine} onValueChange={setMotionEngine}>
+                <Select value={resolvedMotionEngine} onValueChange={setMotionEngine}>
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <span>{selectedMotionEngine.label}</span>
+                        {selectedMotionEngine.recommended && (
+                          <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+                            Recommended
+                          </Badge>
+                        )}
+                      </span>
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="stbvmm" disabled={!!health && !isBackendAvailable('stbvmm')}>STB-VMM</SelectItem>
-                    <SelectItem value="fd4mm" disabled={!!health && !isBackendAvailable('fd4mm')}>FD4MM</SelectItem>
-                    <SelectItem value="flowmag" disabled={!!health && !isBackendAvailable('flowmag')}>FlowMag</SelectItem>
+                    {MOTION_ENGINES.map((engine) => (
+                      <SelectItem
+                        key={engine.value}
+                        value={engine.value}
+                        disabled={!!health && !isBackendAvailable(engine.value)}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>{engine.label}</span>
+                          {engine.recommended && (
+                            <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+                              Recommended
+                            </Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">{engine.note}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -248,18 +279,41 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
                 <label className="block text-xs font-medium text-muted-foreground mb-2">
                   Model
                 </label>
-                <Select value={heartrateEngine} onValueChange={setHeartrateEngine}>
+                <Select value={resolvedHeartrateEngine} onValueChange={setHeartrateEngine}>
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <span>{selectedHeartrateEngine.label}</span>
+                        {selectedHeartrateEngine.recommended && (
+                          <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+                            Recommended
+                          </Badge>
+                        )}
+                      </span>
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="rppg" disabled={!!health && !isBackendAvailable('rppg')}>rPPG-Toolbox (Unsupervised)</SelectItem>
-                    <SelectItem value="rhythm_mamba" disabled={!!health && !isBackendAvailable('rhythm_mamba')}>RhythmMamba</SelectItem>
-                    <SelectItem value="factorizephys" disabled={!!health && !isBackendAvailable('factorizephys')}>FactorizePhys</SelectItem>
+                    {HEARTRATE_ENGINES.map((engine) => (
+                      <SelectItem
+                        key={engine.value}
+                        value={engine.value}
+                        disabled={!!health && !isBackendAvailable(engine.value)}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span>{engine.label}</span>
+                          {engine.recommended && (
+                            <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+                              Recommended
+                            </Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">{engine.note}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              {heartrateEngine === 'rppg' && (
+              {resolvedHeartrateEngine === 'rppg' && (
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground mb-2">
                     rPPG Method

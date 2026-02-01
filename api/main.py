@@ -81,12 +81,13 @@ def health_check():
 
 
 # Import and include routers
-from api.routers import magnify, vitals, audio, progress  # noqa: E402
+from api.routers import magnify, vitals, audio, progress, preview  # noqa: E402
 
 app.include_router(magnify.router, prefix="/magnify", tags=["magnify"])
 app.include_router(vitals.router, prefix="/vitals", tags=["vitals"])
 app.include_router(audio.router, prefix="/audio", tags=["audio"])
 app.include_router(progress.router, prefix="/progress", tags=["progress"])
+app.include_router(preview.router, prefix="/preview", tags=["preview"])
 
 
 # Optional: serve the built frontend from this same FastAPI process.
@@ -108,6 +109,7 @@ if FRONTEND_DIST.exists():
             "/health",
             "/magnify",
             "/openapi.json",
+            "/preview",
             "/redoc",
             "/test-videos",
             "/vitals",

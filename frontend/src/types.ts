@@ -34,6 +34,16 @@ export interface JobProgressResponse {
   updated_at?: number | null;
 }
 
+export interface PreviewFrameResponse {
+  success: boolean;
+  frame_width?: number;
+  frame_height?: number;
+  preview_width?: number;
+  preview_height?: number;
+  preview_data_url?: string;
+  error?: string;
+}
+
 export interface ROI {
   x: number;
   y: number;

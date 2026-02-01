@@ -1,4 +1,4 @@
-import type { HealthData, JobProgressResponse, ProcessingResponse } from './types';
+import type { HealthData, JobProgressResponse, PreviewFrameResponse, ProcessingResponse } from './types';
 
 type BackendOrigin = string | null;
 
@@ -276,6 +276,19 @@ export async function getJobProgress(jobId: string): Promise<JobProgressResponse
   const res = await apiFetch(`/progress/${encodeURIComponent(jobId)}`);
   if (!res.ok) throw new Error(`Progress fetch failed: ${res.status}`);
   return res.json();
+}
+
+export async function previewFirstFrame(
+  file: File,
+  maxSide: number = 960,
+): Promise<PreviewFrameResponse> {
+  const form = new FormData();
+  form.append('video', file);
+  if (Number.isFinite(maxSide) && maxSide > 0) {
+    form.append('max_side', Math.round(maxSide).toString());
+  }
+  const payload = (await apiUploadJson('/preview/frame', form)) as PreviewFrameResponse;
+  return payload;
 }
 
 export function connectVitalsWebSocket(

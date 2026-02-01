@@ -29,3 +29,13 @@ class JobProgressResponse(BaseModel):
     error: Optional[str] = None
     started_at: Optional[float] = None
     updated_at: Optional[float] = None
+
+
+class PreviewFrameResponse(BaseModel):
+    success: bool
+    frame_width: Optional[int] = None
+    frame_height: Optional[int] = None
+    preview_width: Optional[int] = None
+    preview_height: Optional[int] = None
+    preview_data_url: Optional[str] = None
+    error: Optional[str] = None

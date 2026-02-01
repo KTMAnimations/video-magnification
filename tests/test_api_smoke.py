@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import math
@@ -178,6 +179,29 @@ def test_audio_recover_smoke():
     p = prog.json()
     assert p["status"] == "complete"
     assert float(p.get("percent", 0.0)) >= 99.0
+
+
+def test_preview_frame_smoke():
+    frames = _make_pulse_frames(n_frames=2, fps=30)
+    mp4 = _write_mp4(frames, fps=30)
+    client = TestClient(app)
+
+    res = client.post(
+        "/preview/frame",
+        files={"video": ("input.mp4", io.BytesIO(_read_file_bytes(mp4)), "video/mp4")},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["success"] is True
+    assert payload["frame_width"] == 320
+    assert payload["frame_height"] == 240
+    assert payload["preview_width"] == 320
+    assert payload["preview_height"] == 240
+
+    data_url = payload["preview_data_url"]
+    assert isinstance(data_url, str) and data_url.startswith("data:image/jpeg;base64,")
+    raw = base64.b64decode(data_url.split(",", 1)[1])
+    assert raw[:2] == b"\xff\xd8"
 
 
 def test_heartrate_pos_wang_cartoon_face():
