@@ -25,13 +25,13 @@ const PYVHR_METHODS = ['cpu_POS', 'cpu_CHROM', 'cpu_GREEN', 'cpu_ICA', 'cpu_PCA'
 
 const MOTION_ENGINES = [
   { value: 'stbvmm', label: 'STB-VMM', note: 'Stable baseline', recommended: false },
-  { value: 'fd4mm', label: 'FD4MM', note: 'High-detail (slower)', recommended: true },
+  { value: 'fd4mm', label: 'FD4MM', note: 'High-detail (needs weights)', recommended: true },
   { value: 'flowmag', label: 'FlowMag', note: 'Optical-flow based (slower)', recommended: false },
 ] as const;
 
 const HEARTRATE_ENGINES = [
   { value: 'rppg', label: 'rPPG-Toolbox', note: 'No weights (baseline)', recommended: false },
-  { value: 'rhythm_mamba', label: 'RhythmMamba', note: 'Best accuracy (extra deps)', recommended: true },
+  { value: 'rhythm_mamba', label: 'RhythmMamba', note: 'Best accuracy (needs mamba_ssm)', recommended: true },
   { value: 'factorizephys', label: 'FactorizePhys', note: 'Strong supervised model', recommended: false },
 ] as const;
 
@@ -131,26 +131,45 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
                           </Badge>
                         )}
                       </span>
-                    </SelectValue>
+                </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {MOTION_ENGINES.map((engine) => (
-                      <SelectItem
-                        key={engine.value}
-                        value={engine.value}
-                        disabled={!!health && !isBackendAvailable(engine.value)}
-                      >
-                        <span className="flex items-center gap-2">
-                          <span>{engine.label}</span>
-                          {engine.recommended && (
-                            <Badge variant="secondary" className="px-2 py-0 text-[10px]">
-                              Recommended
-                            </Badge>
-                          )}
-                          <span className="text-xs text-muted-foreground">{engine.note}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
+                    {MOTION_ENGINES.map((engine) => {
+                      const info = health?.backends?.[engine.value];
+                      const disabled = !!health && !isBackendAvailable(engine.value);
+                      const fallbackTo = info?.fallback;
+                      const fallbackLabel = fallbackTo
+                        ? (MOTION_ENGINES.find((e) => e.value === fallbackTo)?.label ?? fallbackTo)
+                        : null;
+
+                      return (
+                        <SelectItem
+                          key={engine.value}
+                          value={engine.value}
+                          disabled={disabled}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{engine.label}</span>
+                            {engine.recommended && (
+                              <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+                                Recommended
+                              </Badge>
+                            )}
+                            {disabled && (
+                              <Badge variant="outline" className="px-2 py-0 text-[10px]">
+                                Setup required
+                              </Badge>
+                            )}
+                            {fallbackLabel && (
+                              <Badge variant="outline" className="px-2 py-0 text-[10px]">
+                                Fallback: {fallbackLabel}
+                              </Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground">{engine.note}</span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -290,26 +309,45 @@ export function ConfigPanel({ mode, onSubmit, fileName, health }: Props) {
                           </Badge>
                         )}
                       </span>
-                    </SelectValue>
+                  </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {HEARTRATE_ENGINES.map((engine) => (
-                      <SelectItem
-                        key={engine.value}
-                        value={engine.value}
-                        disabled={!!health && !isBackendAvailable(engine.value)}
-                      >
-                        <span className="flex items-center gap-2">
-                          <span>{engine.label}</span>
-                          {engine.recommended && (
-                            <Badge variant="secondary" className="px-2 py-0 text-[10px]">
-                              Recommended
-                            </Badge>
-                          )}
-                          <span className="text-xs text-muted-foreground">{engine.note}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
+                    {HEARTRATE_ENGINES.map((engine) => {
+                      const info = health?.backends?.[engine.value];
+                      const disabled = !!health && !isBackendAvailable(engine.value);
+                      const fallbackTo = info?.fallback;
+                      const fallbackLabel = fallbackTo
+                        ? (HEARTRATE_ENGINES.find((e) => e.value === fallbackTo)?.label ?? fallbackTo)
+                        : null;
+
+                      return (
+                        <SelectItem
+                          key={engine.value}
+                          value={engine.value}
+                          disabled={disabled}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span>{engine.label}</span>
+                            {engine.recommended && (
+                              <Badge variant="secondary" className="px-2 py-0 text-[10px]">
+                                Recommended
+                              </Badge>
+                            )}
+                            {disabled && (
+                              <Badge variant="outline" className="px-2 py-0 text-[10px]">
+                                Setup required
+                              </Badge>
+                            )}
+                            {fallbackLabel && (
+                              <Badge variant="outline" className="px-2 py-0 text-[10px]">
+                                Fallback: {fallbackLabel}
+                              </Badge>
+                            )}
+                            <span className="text-xs text-muted-foreground">{engine.note}</span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
