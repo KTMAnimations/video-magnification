@@ -44,7 +44,7 @@ Thumbs.db
 video-magnification-webapp-plan.md
 
 # Large test videos (>100MB, exceeds GitHub limit)
-test-videos/*.avi
+test-videos/**/*.avi
 
 # Playwright/MCP artifacts
 .playwright-mcp/e2e-*.png
