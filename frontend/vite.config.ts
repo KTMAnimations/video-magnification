@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   server: {
+    port: 5174,
     proxy: {
       '/magnify': 'http://localhost:8001',
       '/vitals': { target: 'http://localhost:8001', ws: true },
