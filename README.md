@@ -10,8 +10,7 @@ Unified webapp for:
 ## Quick start
 
 ```bash
-# 1) Clone backend repos + download STB‑VMM weights
-bash scripts/setup_backends.sh
+# 1) Backends are vendored; download model weights
 bash scripts/download_weights.sh
 
 # 2) Python deps (recommended: venv)

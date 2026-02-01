@@ -37,6 +37,17 @@ Thumbs.db
 # Large test videos (>100MB, exceeds GitHub limit)
 test-videos/**/*.avi
 
+# Backend model weights / caches (downloaded locally)
+backends/**/.cache/
+backends/STB-VMM/ckpt_e49.pth.tar
+backends/flowmag/checkpoints/*.pth
+backends/**/PreTrainedModels/*.pth
+backends/**/final_model_release/*.pth
+backends/**/ckpts/*.pth
+backends/**/resources/**/*.pth
+backends/**/resources/**/*.pt
+backends/**/resources/**/*.hdf5
+
 # Playwright/MCP artifacts
 .playwright-mcp/e2e-*.png
 .playwright-mcp/uvicorn.log
