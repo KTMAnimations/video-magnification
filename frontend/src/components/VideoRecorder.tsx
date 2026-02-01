@@ -175,6 +175,7 @@ export function VideoRecorder({ onRecordingComplete }: Props) {
         return;
       }
       const blob = new Blob(chunksRef.current, { type: recorder.mimeType || preferredMimeType || undefined });
+      chunksRef.current = [];
       recordedBlobRef.current = blob;
       const url = URL.createObjectURL(blob);
       recordedUrlRef.current = url;
