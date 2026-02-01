@@ -62,22 +62,48 @@ class FD4MMService(BaseService):
     _device = None
     _last_error: str | None = None
 
-    def is_available(self) -> bool:
+    @staticmethod
+    def _fallback_service():
+        # Lazy import to avoid eager torch/model imports at module import time.
+        from api.services.stbvmm import STBVMMService
+
+        return STBVMMService()
+
+    def _native_is_available(self) -> bool:
+        """Return True only if FD4MM itself is configured (repo + weights + importable)."""
         try:
             import torch  # noqa: F401
 
             if not BACKENDS_DIR.exists():
+                self._last_error = f"FD4MM repo not found at {BACKENDS_DIR} (run scripts/setup_backends.sh)"
                 return False
+
             ckpt = _checkpoint_path()
             if not ckpt.exists():
                 self._last_error = f"Missing checkpoint: {ckpt} (set VMAG_FD4MM_CHECKPOINT or place file there)"
                 return False
+
+            if str(BACKENDS_DIR) not in sys.path:
+                sys.path.insert(0, str(BACKENDS_DIR))
+            # Import-time sanity check.
+            from magnet_FD4MM import MagNet  # noqa: F401,  PLC0415
 
             self._last_error = None
             return True
         except Exception as e:
             self._last_error = f"{type(e).__name__}: {e}"
             return False
+
+    def is_available(self) -> bool:
+        if self._native_is_available():
+            return True
+
+        # If FD4MM isn't configured (weights not public / not downloaded),
+        # still keep the engine usable by falling back to STB-VMM.
+        fb = self._fallback_service()
+        if fb.is_available():
+            return True
+        return False
 
     def _load_model(self):
         if self._model is not None:
@@ -117,6 +143,25 @@ class FD4MMService(BaseService):
         max_side: int = 0,
         progress: ProgressSink | None = None,
     ) -> ProcessingResult:
+        if not self._native_is_available():
+            fb = self._fallback_service()
+            if not fb.is_available():
+                return ProcessingResult(success=False, error="FD4MM backend not available and fallback STB-VMM is also unavailable.")
+
+            result = fb.process(
+                video_path,
+                magnification=magnification,
+                mode=mode,
+                max_frames=max_frames,
+                max_side=max_side,
+                progress=progress,
+            )
+            if result.success:
+                result.warnings = (result.warnings or []) + ["FD4MM unavailable; used STB-VMM fallback."]
+            else:
+                result.error = f"FD4MM unavailable; STB-VMM fallback failed: {result.error}"
+            return result
+
         cap = None
         writer = None
         try:
@@ -353,4 +398,3 @@ class FD4MMService(BaseService):
         if rgb.shape[1] != transform.orig_w or rgb.shape[0] != transform.orig_h:
             rgb = cv2.resize(rgb, (transform.orig_w, transform.orig_h), interpolation=cv2.INTER_LINEAR)
         return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-

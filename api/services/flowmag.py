@@ -6,8 +6,10 @@ import os
 import sys
 import traceback
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 
 import cv2
 import numpy as np
@@ -19,6 +21,8 @@ from api.utils.video import get_total_frames
 BACKENDS_DIR = Path("backends/flowmag")
 PROCESSED_DIR = Path("data/processed")
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+
+_FLOWMAG_IMPORT_LOCK = RLock()
 
 
 def _checkpoint_path() -> Path:
@@ -43,6 +47,40 @@ def _strip_module_prefix(state_dict: dict) -> dict:
     if not any(k.startswith("module.") for k in state_dict.keys()):
         return state_dict
     return {k.removeprefix("module."): v for k, v in state_dict.items()}
+
+
+@contextmanager
+def _flowmag_import_context():
+    """Isolate FlowMag's absolute imports.
+
+    FlowMag's repo uses absolute imports like `from models...`, which conflicts
+    with other backends (notably STB-VMM also has a top-level `models` package).
+    """
+    prefixes = ("models", "losses")
+
+    with _FLOWMAG_IMPORT_LOCK:
+        old_sys_path = list(sys.path)
+
+        saved_modules: dict[str, object] = {}
+        for name, mod in list(sys.modules.items()):
+            if any(name == p or name.startswith(p + ".") for p in prefixes):
+                saved_modules[name] = mod
+                del sys.modules[name]
+
+        if str(BACKENDS_DIR) in sys.path:
+            sys.path.remove(str(BACKENDS_DIR))
+        sys.path.insert(0, str(BACKENDS_DIR))
+
+        try:
+            yield
+        finally:
+            # Remove any FlowMag-loaded modules under the conflicting prefixes.
+            for name in list(sys.modules.keys()):
+                if any(name == p or name.startswith(p + ".") for p in prefixes):
+                    del sys.modules[name]
+
+            sys.modules.update(saved_modules)
+            sys.path[:] = old_sys_path
 
 
 class FlowMagService(BaseService):
@@ -94,9 +132,10 @@ class FlowMagService(BaseService):
         config.data.batch_size = 1
         self._max_alpha = float(getattr(config.train, "alpha_high", 16.0))
 
-        from model import MotionMagModel  # type: ignore
+        with _flowmag_import_context():
+            from model import MotionMagModel  # type: ignore
 
-        model = MotionMagModel(config)
+            model = MotionMagModel(config)
         ckpt_obj = torch.load(str(_checkpoint_path()), map_location="cpu", weights_only=False)
         if isinstance(ckpt_obj, dict) and "state_dict" in ckpt_obj:
             state_dict = ckpt_obj["state_dict"]

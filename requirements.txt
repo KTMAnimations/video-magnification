@@ -6,8 +6,7 @@ websockets>=12.0
 
 # Video / Image processing
 opencv-contrib-python>=4.8.0
-mediapipe==0.10.21
-numpy>=1.24.0,<2
+numpy>=1.24.0
 
 # Signal processing
 scipy>=1.11.0
@@ -21,6 +20,9 @@ torch>=2.1.0
 torchvision>=0.16.0
 einops>=0.7.0
 omegaconf>=2.3.0
+
+# Optional model backend deps
+timm>=1.0.0                 # RhythmMamba (and some research backends)
 
 # Audio
 soundfile>=0.12.0

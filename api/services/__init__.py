@@ -100,7 +100,7 @@ def get_backend_status() -> Dict[str, Dict[str, Any]]:
             svc = getter()
             available = svc.is_available()
             err = getattr(svc, "_last_error", None)
-            status[key] = {"label": label, "available": available, "error": err if err else None}
+            status[key] = {"label": label, "available": available, "error": (err if (not available and err) else None)}
         except Exception as e:
             status[key] = {"label": label, "available": False, "error": str(e)}
 

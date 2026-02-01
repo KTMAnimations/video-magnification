@@ -1,10 +1,18 @@
 diff --git a/neural_methods/model/FactorizePhys/FSAM.py b/neural_methods/model/FactorizePhys/FSAM.py
 --- a/neural_methods/model/FactorizePhys/FSAM.py
 +++ b/neural_methods/model/FactorizePhys/FSAM.py
-@@ -7,6 +7,5 @@
+@@ -2,12 +2,11 @@
+ FactorizePhys: Matrix Factorization for Multidimensional Attention in Remote Physiological Sensing
+ NeurIPS 2024
+ Jitesh Joshi, Sos S. Agaian, and Youngjun Cho
+ """
+ 
  import torch
  import torch.nn as nn
  import torch.nn.functional as F
  from torch.nn.modules.batchnorm import _BatchNorm
  import numpy as np
 -import neurokit2 as nk
+ 
+ 
+ class _MatrixDecompositionBase(nn.Module):

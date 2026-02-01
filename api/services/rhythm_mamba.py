@@ -35,18 +35,26 @@ class RhythmMambaService(BaseService):
     _device = None
     _last_error: str | None = None
 
-    def is_available(self) -> bool:
+    def _native_is_available(self) -> bool:
+        """Return True only if RhythmMamba itself is configured and importable."""
         try:
             import torch  # noqa: F401
 
             if not BACKENDS_DIR.exists():
+                self._last_error = f"RhythmMamba repo not found at {BACKENDS_DIR} (run scripts/setup_backends.sh)"
                 return False
             if not _checkpoint_path().exists():
+                self._last_error = f"Missing checkpoint: {_checkpoint_path()} (set VMAG_RHYTHMMAMBA_CHECKPOINT or place file there)"
                 return False
 
-            # Import-time sanity check (RhythmMamba depends on timm + mamba_ssm).
-            if str(BACKENDS_DIR) not in sys.path:
-                sys.path.insert(0, str(BACKENDS_DIR))
+            # Import-time dependency checks (CPU-only Mac builds commonly can't install mamba_ssm).
+            import timm  # noqa: F401
+            import mamba_ssm  # noqa: F401
+
+            if str(BACKENDS_DIR) in sys.path:
+                sys.path.remove(str(BACKENDS_DIR))
+            sys.path.insert(0, str(BACKENDS_DIR))
+
             from neural_methods.model.RhythmMamba import RhythmMamba  # noqa: F401
 
             self._last_error = None
@@ -54,6 +62,14 @@ class RhythmMambaService(BaseService):
         except Exception as e:
             self._last_error = f"{type(e).__name__}: {e}"
             return False
+
+    def is_available(self) -> bool:
+        if self._native_is_available():
+            return True
+
+        # Fallback: keep the endpoint usable by using the rPPG-Toolbox engine.
+        rppg = RPPGService()
+        return rppg.is_available()
 
     def _load_model(self):
         if self._model is not None:
@@ -84,6 +100,17 @@ class RhythmMambaService(BaseService):
         self._model = model
 
     def process(self, video_path: str, progress: ProgressSink | None = None) -> ProcessingResult:
+        if not self._native_is_available():
+            rppg = RPPGService()
+            if not rppg.is_available():
+                return ProcessingResult(success=False, error="RhythmMamba backend unavailable and rPPG fallback is also unavailable.")
+            result = rppg.process(video_path, method="ALL", progress=progress)
+            if result.success:
+                result.warnings = (result.warnings or []) + ["RhythmMamba unavailable; used rPPG-Toolbox fallback."]
+            else:
+                result.error = f"RhythmMamba unavailable; rPPG-Toolbox fallback failed: {result.error}"
+            return result
+
         cap = None
         try:
             import torch
@@ -197,4 +224,3 @@ class RhythmMambaService(BaseService):
         psd_power = (yf[psd_mask] ** 2).tolist()
 
         return bpm, confidence, psd_freqs, psd_power
-
