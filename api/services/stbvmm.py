@@ -12,6 +12,7 @@ import numpy as np
 
 from api.services.base import BaseService, ProcessingResult
 from api.progress import ProgressSink
+from api.utils.video import get_total_frames
 
 BACKENDS_DIR = Path("backends/STB-VMM")
 PROCESSED_DIR = Path("data/processed")
@@ -135,6 +136,8 @@ class STBVMMService(BaseService):
 
             cap = cv2.VideoCapture(video_path)
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            if total_frames <= 0 and progress and (not max_frames or int(max_frames) <= 0):
+                total_frames = int(get_total_frames(video_path) or 0)
 
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             ret, first_frame = cap.read()

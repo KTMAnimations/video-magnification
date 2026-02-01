@@ -18,7 +18,7 @@ router = APIRouter()
 @router.post("/heartrate", response_model=ProcessingResponse)
 async def extract_heartrate(
     video: UploadFile = File(...),
-    method: str = Form("POS_WANG"),
+    method: str = Form("ALL"),
     job_id: str = Form(""),
 ):
     """Heart rate extraction using rPPG-Toolbox unsupervised methods."""

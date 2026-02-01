@@ -13,6 +13,7 @@ import numpy as np
 
 from api.services.base import BaseService, ProcessingResult
 from api.progress import ProgressSink
+from api.utils.video import get_total_frames
 
 BACKENDS_DIR = Path("backends/rPPG-Toolbox")
 SUPPORTED_METHODS = ["POS_WANG", "CHROME_DEHAAN", "ICA_POH", "GREEN", "LGI", "PBV", "OMIT"]
@@ -34,7 +35,7 @@ class RPPGService(BaseService):
             self._last_error = f"{type(e).__name__}: {e}"
             return False
 
-    def process(self, video_path: str, method: str = "POS_WANG", progress: ProgressSink | None = None) -> ProcessingResult:
+    def process(self, video_path: str, method: str = "ALL", progress: ProgressSink | None = None) -> ProcessingResult:
         try:
             if str(BACKENDS_DIR) not in sys.path:
                 sys.path.insert(0, str(BACKENDS_DIR))
@@ -163,6 +164,8 @@ class RPPGService(BaseService):
         """
         cap = cv2.VideoCapture(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if total_frames <= 0 and progress:
+            total_frames = int(get_total_frames(video_path) or 0)
         frames_bgr = []
         read_count = 0
         while True:

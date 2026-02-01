@@ -36,7 +36,7 @@ export function ConfigPanel({ mode, onSubmit, fileName }: Props) {
   const [pyramidLevels, setPyramidLevels] = useState(4);
 
   // Vitals params
-  const [rppgMethod, setRppgMethod] = useState('POS_WANG');
+  const [rppgMethod, setRppgMethod] = useState('ALL');
   const [pyvhrMethod, setPyvhrMethod] = useState('cpu_POS');
   const [winsize, setWinsize] = useState(5);
 

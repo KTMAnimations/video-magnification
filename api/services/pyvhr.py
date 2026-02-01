@@ -12,6 +12,7 @@ import traceback
 from pathlib import Path
 from typing import List
 import sys
+from threading import local
 
 import cv2
 import numpy as np
@@ -19,8 +20,69 @@ import numpy as np
 from api.services.base import BaseService, ProcessingResult
 from api.progress import ProgressSink
 from api.services.rppg import RPPGService
+from api.utils.video import get_total_frames
 
 BACKENDS_DIR = Path("backends/pyVHR")
+
+_pyvhr_thread_ctx = local()
+_pyvhr_frame_hook_installed = False
+
+
+def _install_pyvhr_progress_hooks() -> None:
+    """Install a thread-local progress hook into pyVHR frame extraction.
+
+    pyVHR's SignalProcessing loops over frames via `extract_frames_yield(...)`.
+    We wrap that generator so we can update our API progress tracker per-frame
+    (without permanently changing behavior when no progress sink is configured).
+    """
+    global _pyvhr_frame_hook_installed
+    if _pyvhr_frame_hook_installed:
+        return
+
+    # Ensure pyVHR is importable.
+    if str(BACKENDS_DIR) not in sys.path:
+        sys.path.insert(0, str(BACKENDS_DIR))
+
+    import pyVHR.extraction.utils as pyvhr_utils
+    import pyVHR.extraction.sig_processing as pyvhr_sig_processing
+
+    orig_extract = pyvhr_utils.extract_frames_yield
+
+    def wrapped_extract_frames_yield(videoFileName: str):
+        ctx = getattr(_pyvhr_thread_ctx, "progress_ctx", None)
+        if not ctx:
+            yield from orig_extract(videoFileName)
+            return
+
+        progress: ProgressSink | None = ctx.get("progress")
+        total_frames: int | None = ctx.get("total_frames")
+        stage: str = ctx.get("stage") or "pyvhr"
+        message: str = ctx.get("message") or "Processing video"
+        start_percent: float = float(ctx.get("start_percent") or 0.0)
+        span_percent: float = float(ctx.get("span_percent") or 75.0)
+
+        total = int(total_frames) if isinstance(total_frames, int) and total_frames > 0 else 0
+
+        for idx, frame in enumerate(orig_extract(videoFileName), start=1):
+            if progress:
+                if total > 0:
+                    overall = start_percent + (idx / total) * span_percent
+                    progress.update(
+                        stage=stage,
+                        message=message,
+                        current=idx,
+                        total=total,
+                        percent=overall,
+                    )
+                else:
+                    progress.update(stage=stage, message=message, current=idx, total=None, percent=None)
+            yield frame
+
+    # Patch both the canonical util and the symbol imported into sig_processing.
+    pyvhr_utils.extract_frames_yield = wrapped_extract_frames_yield
+    pyvhr_sig_processing.extract_frames_yield = wrapped_extract_frames_yield
+
+    _pyvhr_frame_hook_installed = True
 
 
 class PyVHRService(BaseService):
@@ -78,10 +140,24 @@ class PyVHRService(BaseService):
         if Pipeline is not None:
             try:
                 if progress:
-                    progress.update(stage="pyvhr", message="Running pyVHR pipeline", percent=None, force=True)
+                    progress.update(stage="pyvhr", message="Preparing pyVHR pipeline", percent=0.0, force=True)
                 cap = cv2.VideoCapture(video_path)
                 fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
                 cap.release()
+                if total_frames <= 0 and progress:
+                    total_frames = int(get_total_frames(video_path) or 0)
+
+                if progress:
+                    _install_pyvhr_progress_hooks()
+                    _pyvhr_thread_ctx.progress_ctx = {
+                        "progress": progress,
+                        "total_frames": total_frames if total_frames > 0 else None,
+                        "stage": "pyvhr_roi",
+                        "message": "Extracting face signal",
+                        "start_percent": 0.0,
+                        "span_percent": 75.0,
+                    }
 
                 pipe = Pipeline()
                 bvps_win, timesES, bpmES = pipe.run_on_video(
@@ -92,6 +168,9 @@ class PyVHRService(BaseService):
                     cuda=False,
                     verb=False,
                 )
+                if progress:
+                    _pyvhr_thread_ctx.progress_ctx = None
+                    progress.update(stage="analyze", message="Computing metrics", percent=85.0, force=True)
 
                 # Normalize pyVHR outputs into JSON-friendly primitives.
                 bpm_values: list[float] = []
@@ -117,6 +196,8 @@ class PyVHRService(BaseService):
                 bpm_mean = float(np.nanmean(bpm_values)) if bpm_values else None
 
                 # Optional confidence/PSD using the same estimator used elsewhere in the app.
+                if progress:
+                    progress.update(stage="analyze", message="Estimating confidence", percent=90.0, force=True)
                 confidence = None
                 psd_freqs = []
                 psd_power = []
@@ -130,8 +211,12 @@ class PyVHRService(BaseService):
                     psd_power = pp
 
                 # Compute HRV metrics from the returned BVP segment.
+                if progress:
+                    progress.update(stage="analyze", message="Computing HRV metrics", percent=95.0, force=True)
                 times_samples = (np.arange(bvp_segment.size, dtype=np.float32) / fps).tolist() if bvp_segment.size else []
                 hrv_data = self._compute_hrv([bvp_segment], times_samples) if bvp_segment.size else {}
+                if progress:
+                    progress.update(stage="analyze", message="Done", percent=100.0, force=True)
 
                 # Basic sanity check: if pyVHR returns an out-of-range BPM, fall back.
                 if bpm_mean is not None and (bpm_mean < 40.0 or bpm_mean > 200.0):
@@ -158,6 +243,8 @@ class PyVHRService(BaseService):
                     },
                 )
             except Exception as e:
+                if progress:
+                    _pyvhr_thread_ctx.progress_ctx = None
                 # If pyVHR fails on a particular input (no face, low quality, etc),
                 # fall back to the rPPG-Toolbox path instead of failing the endpoint.
                 pyvhr_error = f"{type(e).__name__}: {e}"
@@ -240,6 +327,8 @@ class PyVHRService(BaseService):
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if total_frames <= 0 and progress:
+            total_frames = int(get_total_frames(video_path) or 0)
         frames = []
         read_count = 0
         while True:

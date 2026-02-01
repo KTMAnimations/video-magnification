@@ -204,10 +204,13 @@ def test_heartrate_all_compare_returns_confidence():
     assert len(compare) >= 3
     assert {"POS_WANG", "CHROME_DEHAAN", "ICA_POH"}.issubset({row.get("method") for row in compare})
 
-    pos = next(row for row in compare if row.get("method") == "POS_WANG" and row.get("ok") is True)
-    bpm = float(pos["bpm"])
+    default_method = payload["data"]["method"]
+    assert isinstance(default_method, str) and default_method
+
+    default_row = next(row for row in compare if row.get("method") == default_method and row.get("ok") is True)
+    bpm = float(default_row["bpm"])
     assert abs(bpm - 72.0) <= 5.0
-    conf = float(pos["confidence"])
+    conf = float(default_row["confidence"])
     assert 0.0 <= conf <= 1.0
 
 

@@ -153,7 +153,7 @@ function App() {
             );
             break;
           case 'heartrate':
-            res = await processHeartRate(file, typeof params.method === 'string' ? params.method : 'POS_WANG', {
+            res = await processHeartRate(file, typeof params.method === 'string' ? params.method : 'ALL', {
               jobId,
               onUploadProgress: (p) => {
                 if (typeof p.percent === 'number') {

@@ -125,7 +125,7 @@ Extracts heart rate from face video using remote photoplethysmography (rPPG). Us
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `video` | File | required | Video containing a face |
-| `method` | string | "POS_WANG" | Algorithm: `POS_WANG`, `CHROM_DEHAAN`, `GREEN`, `ICA_POH`, `LGI`, `PBV` |
+| `method` | string | "ALL" | Algorithm: `ALL` (compare), `POS_WANG`, `CHROM_DEHAAN`, `GREEN`, `ICA_POH`, `LGI`, `PBV` |
 
 **Response data includes:** `bpm`, `bvp` (blood volume pulse array), `psd_freqs`, `psd_power`, `confidence`, `fps`, `n_frames`, `method`.
 
