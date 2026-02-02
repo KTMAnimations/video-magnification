@@ -306,8 +306,18 @@ class RPPGService(BaseService):
 
         hr_freqs = xf[hr_mask]
         hr_power = yf[hr_mask]
-        peak_idx = np.argmax(hr_power)
-        peak_freq = hr_freqs[peak_idx]
+        peak_idx = int(np.argmax(hr_power))
+        peak_freq = float(hr_freqs[peak_idx])
+
+        # Harmonic correction: some methods produce a BVP where the 2nd harmonic
+        # dominates. If there's a strong peak at half-frequency, prefer it.
+        half_freq = peak_freq / 2.0
+        if half_freq >= 0.67:
+            half_idx = int(np.argmin(np.abs(hr_freqs - half_freq)))
+            if float(hr_power[half_idx]) >= float(hr_power[peak_idx]) * 0.5:
+                peak_idx = half_idx
+                peak_freq = float(hr_freqs[peak_idx])
+
         bpm = peak_freq * 60.0
 
         # Confidence: ratio of peak to total power

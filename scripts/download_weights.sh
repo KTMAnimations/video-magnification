@@ -1,10 +1,19 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
 
 downloaded_any=0
 download_failures=0
+missing_any=0
 
 echo "=== Downloading / checking model weights ==="
+
+if [ -d "scripts/backends" ]; then
+    echo "NOTE: Found scripts/backends (likely created by running this script from ./scripts before it cd'd to repo root)."
+    echo "      It is safe to delete to avoid confusion: rm -rf scripts/backends"
+fi
 
 ##
 ## STB-VMM
@@ -34,6 +43,7 @@ if [ -f "$FD4MM_CKPT_PATH" ]; then
     echo "FD4MM checkpoint found at $FD4MM_CKPT_PATH"
 else
     echo "FD4MM checkpoint missing at $FD4MM_CKPT_PATH (place it there or set VMAG_FD4MM_CHECKPOINT)."
+    missing_any=1
 fi
 
 ##
@@ -72,6 +82,7 @@ else
             echo "FlowMag checkpoint downloaded to $FLOWMAG_RAFT_CKPT"
         else
             download_failures=1
+            missing_any=1
             if [ "$flowmag_status" -ne 0 ]; then
                 echo "FlowMag weights download failed (gdown error). This is often due to Google Drive permissions/quota."
             fi
@@ -79,6 +90,7 @@ else
     else
         echo "FlowMag repo not found at $FLOWMAG_DIR (run scripts/setup_backends.sh first)."
         download_failures=1
+        missing_any=1
     fi
 fi
 
@@ -92,8 +104,10 @@ if [ -f "$RHYTHM_CKPT" ]; then
 else
     if [ -d "$RHYTHM_DIR" ]; then
         echo "RhythmMamba repo present, but pretrained weights missing at $RHYTHM_CKPT"
+        missing_any=1
     else
         echo "RhythmMamba repo not found at $RHYTHM_DIR (run scripts/setup_backends.sh first)."
+        missing_any=1
     fi
 fi
 
@@ -113,8 +127,10 @@ else
     echo "FactorizePhys checkpoint downloaded to $FACTOR_CKPT"
 fi
 
-if [ "$downloaded_any" -eq 0 ]; then
+if [ "$downloaded_any" -eq 0 ] && [ "$missing_any" -eq 0 ]; then
     echo "All requested checkpoints already present."
+elif [ "$downloaded_any" -eq 0 ]; then
+    echo "No checkpoints downloaded."
 fi
 
 if [ "$download_failures" -ne 0 ]; then

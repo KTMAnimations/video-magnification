@@ -9,6 +9,8 @@ using the rPPG-Toolbox unsupervised methods on face ROI frames.
 
 import tempfile
 import traceback
+import uuid
+from bisect import bisect_right
 from pathlib import Path
 from typing import List
 import sys
@@ -23,9 +25,46 @@ from api.services.rppg import RPPGService
 from api.utils.video import get_total_frames
 
 BACKENDS_DIR = Path("backends/pyVHR")
+PROCESSED_DIR = Path("data/processed")
+PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
 _pyvhr_thread_ctx = local()
 _pyvhr_frame_hook_installed = False
+
+
+def _pick_bpm_at_time(t: float, times_s: list[float], bpms: list[float]) -> float | None:
+    if not times_s or not bpms or len(times_s) != len(bpms):
+        return None
+    idx = bisect_right(times_s, t) - 1
+    idx = max(0, min(idx, len(bpms) - 1))
+    try:
+        v = float(bpms[idx])
+    except Exception:
+        return None
+    return v if np.isfinite(v) else None
+
+
+def _draw_text_block(frame: np.ndarray, lines: list[str]) -> None:
+    if not lines:
+        return
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.6
+    thickness = 2
+    line_gap = 6
+    pad = 6
+    x = 10
+    y = 28
+
+    for line in lines:
+        (w, h), baseline = cv2.getTextSize(line, font, font_scale, thickness)
+        x0 = max(0, x - pad)
+        y0 = max(0, y - h - pad)
+        x1 = min(frame.shape[1], x + w + pad)
+        y1 = min(frame.shape[0], y + baseline + pad)
+        cv2.rectangle(frame, (x0, y0), (x1, y1), (0, 0, 0), -1)
+        cv2.putText(frame, line, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+        y += h + baseline + line_gap
 
 
 def _install_pyvhr_progress_hooks() -> None:
@@ -134,6 +173,7 @@ class PyVHRService(BaseService):
         method: str = "cpu_POS",
         winsize: int = 5,
         progress: ProgressSink | None = None,
+        render_video: bool = True,
     ) -> ProcessingResult:
         Pipeline = self._try_import_pyvhr()
 
@@ -215,19 +255,17 @@ class PyVHRService(BaseService):
                     progress.update(stage="analyze", message="Computing HRV metrics", percent=95.0, force=True)
                 times_samples = (np.arange(bvp_segment.size, dtype=np.float32) / fps).tolist() if bvp_segment.size else []
                 hrv_data = self._compute_hrv([bvp_segment], times_samples) if bvp_segment.size else {}
-                if progress:
-                    progress.update(stage="analyze", message="Done", percent=100.0, force=True)
 
                 # Basic sanity check: if pyVHR returns an out-of-range BPM, fall back.
                 if bpm_mean is not None and (bpm_mean < 40.0 or bpm_mean > 200.0):
-                    fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress)
+                    fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress, render_video=render_video)
                     if fallback.success:
                         fallback.warnings = (fallback.warnings or []) + [
                             f"pyVHR returned out-of-range BPM ({bpm_mean:.1f}); using fallback rPPG engine instead."
                         ]
                         return fallback
 
-                return ProcessingResult(
+                res = ProcessingResult(
                     success=True,
                     data={
                         "bpm": bpm_values,
@@ -240,8 +278,28 @@ class PyVHRService(BaseService):
                         "psd_freqs": psd_freqs,
                         "psd_power": psd_power,
                         "bpm_psd": bpm_from_psd,
+                        "fps": float(fps),
+                        "n_frames": int(total_frames) if total_frames > 0 else None,
                     },
                 )
+                if render_video:
+                    out_name, out_warnings = self._write_annotated_video(
+                        video_path=video_path,
+                        fps=float(fps),
+                        times_s=times_bpm,
+                        bpm_values=bpm_values,
+                        bpm_mean=bpm_mean,
+                        confidence=confidence,
+                        method=method,
+                        progress=progress,
+                    )
+                    res.output_path = out_name
+                    if out_warnings:
+                        res.warnings = (res.warnings or []) + out_warnings
+
+                if progress:
+                    progress.update(stage="analyze", message="Done", percent=100.0, force=True)
+                return res
             except Exception as e:
                 if progress:
                     _pyvhr_thread_ctx.progress_ctx = None
@@ -250,7 +308,7 @@ class PyVHRService(BaseService):
                 pyvhr_error = f"{type(e).__name__}: {e}"
                 pyvhr_tb = traceback.format_exc()
 
-                fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress)
+                fallback = self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress, render_video=render_video)
                 if fallback.success:
                     fallback.warnings = (fallback.warnings or []) + [
                         f"pyVHR failed for this input; using fallback rPPG engine ({pyvhr_error})"
@@ -266,7 +324,106 @@ class PyVHRService(BaseService):
                 )
 
         # Fallback implementation (no pyVHR)
-        return self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress)
+        return self._process_fallback(video_path=video_path, method=method, winsize=winsize, progress=progress, render_video=render_video)
+
+    def _write_annotated_video(
+        self,
+        *,
+        video_path: str,
+        fps: float,
+        times_s: list[float],
+        bpm_values: list[float],
+        bpm_mean: float | None,
+        confidence: float | None,
+        method: str,
+        progress: ProgressSink | None = None,
+    ) -> tuple[str | None, list[str]]:
+        warnings: list[str] = []
+        cap = None
+        writer = None
+        try:
+            cap = cv2.VideoCapture(video_path)
+            fps = float(fps or cap.get(cv2.CAP_PROP_FPS) or 30.0)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            if total_frames <= 0 and progress:
+                total_frames = int(get_total_frames(video_path) or 0)
+
+            if width <= 0 or height <= 0:
+                warnings.append("Could not determine video dimensions; skipping output video.")
+                return None, warnings
+
+            out_name = f"{uuid.uuid4().hex}.mp4"
+            out_path = PROCESSED_DIR / out_name
+
+            if progress:
+                progress.update(stage="write_output", message="Rendering output video", percent=97.0, force=True)
+
+            # Prefer H.264 (avc1) for in-browser playback (Chrome often can't decode mp4v).
+            fourcc = cv2.VideoWriter_fourcc(*"avc1")
+            writer = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
+            if not writer.isOpened():
+                warnings.append("H.264 encoder unavailable; falling back to mp4v (may not play in-browser).")
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(str(out_path), fourcc, fps, (width, height))
+            if not writer.isOpened():
+                warnings.append("Failed to initialize video writer; skipping output video.")
+                return None, warnings
+
+            wrote = 0
+            while True:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    break
+                wrote += 1
+
+                if frame.shape[:2] != (height, width):
+                    frame = cv2.resize(frame, (width, height))
+
+                t = (wrote - 1) / fps if fps > 0 else 0.0
+                bpm_here = _pick_bpm_at_time(t, times_s, bpm_values)
+                bpm_display = bpm_here if bpm_here is not None else bpm_mean
+                lines: list[str] = [f"Method: {method}"]
+                if bpm_display is not None:
+                    lines.append(f"BPM: {bpm_display:.1f}")
+                if bpm_mean is not None and bpm_here is not None:
+                    lines.append(f"Avg: {bpm_mean:.1f}")
+                if confidence is not None:
+                    lines.append(f"Conf: {confidence * 100.0:.0f}%")
+
+                _draw_text_block(frame, lines)
+                writer.write(frame)
+
+                if progress and total_frames > 0:
+                    percent = 97.0 + (wrote / total_frames) * 3.0
+                    progress.update(
+                        stage="write_output",
+                        message="Rendering output video",
+                        current=wrote,
+                        total=total_frames,
+                        percent=min(100.0, percent),
+                    )
+
+            if wrote <= 0:
+                warnings.append("Could not read video frames for output; skipping output video.")
+                return None, warnings
+
+            return out_name, warnings
+        except Exception as e:
+            warnings.append(f"Failed to render output video ({type(e).__name__}: {e}); skipping.")
+            return None, warnings
+        finally:
+            try:
+                if cap is not None:
+                    cap.release()
+            except Exception:
+                pass
+            try:
+                if writer is not None:
+                    writer.release()
+            except Exception:
+                pass
 
     def process_frames(self, jpeg_frames: List[bytes], fps: float) -> ProcessingResult:
         """Process a buffer of JPEG frames (from webcam WebSocket)."""
@@ -292,12 +449,12 @@ class PyVHRService(BaseService):
                     writer.write(f)
                 writer.release()
 
-                result = self.process(tmp.name, method="cpu_POS", winsize=5)
+                result = self.process(tmp.name, method="cpu_POS", winsize=5, render_video=False)
                 Path(tmp.name).unlink(missing_ok=True)
                 return result
 
             # Otherwise use the fallback directly on decoded frames.
-            return self._process_fallback_frames(frames_bgr=decoded, fps=fps, method="cpu_POS", winsize=5)
+            return self._process_fallback_frames(frames_bgr=decoded, fps=fps, method="cpu_POS", winsize=5, render_video=False)
 
         except Exception as e:
             return ProcessingResult(
@@ -323,7 +480,7 @@ class PyVHRService(BaseService):
         warnings.append(f"Method '{method}' not supported in fallback mode; using cpu_POS.")
         return "POS_WANG", warnings
 
-    def _process_fallback(self, video_path: str, method: str, winsize: int, progress: ProgressSink | None = None) -> ProcessingResult:
+    def _process_fallback(self, video_path: str, method: str, winsize: int, progress: ProgressSink | None = None, render_video: bool = True) -> ProcessingResult:
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
@@ -345,9 +502,9 @@ class PyVHRService(BaseService):
                     progress.update(stage="read_frames", message="Reading video frames", current=read_count, total=None, percent=None)
         cap.release()
 
-        return self._process_fallback_frames(frames_bgr=frames, fps=float(fps), method=method, winsize=winsize, progress=progress)
+        return self._process_fallback_frames(frames_bgr=frames, fps=float(fps), method=method, winsize=winsize, progress=progress, render_video=render_video, video_path=video_path)
 
-    def _process_fallback_frames(self, frames_bgr: list[np.ndarray], fps: float, method: str, winsize: int, progress: ProgressSink | None = None) -> ProcessingResult:
+    def _process_fallback_frames(self, frames_bgr: list[np.ndarray], fps: float, method: str, winsize: int, progress: ProgressSink | None = None, render_video: bool = True, video_path: str | None = None) -> ProcessingResult:
         rppg_method, warnings = self._map_method_to_rppg(method)
         rppg = RPPGService()
         frames_rgb = rppg.extract_face_frames_from_bgr_frames(frames_bgr, progress=progress)
@@ -390,9 +547,9 @@ class PyVHRService(BaseService):
         times_es = (np.arange(len(bvp), dtype=np.float32) / float(fps)).tolist()
         hrv_data = self._compute_hrv([bvp], times_es)
         if progress:
-            progress.update(stage="analyze", message="Computing HRV metrics", percent=100.0, force=True)
+            progress.update(stage="analyze", message="Computing HRV metrics", percent=95.0, force=True)
 
-        return ProcessingResult(
+        res = ProcessingResult(
             success=True,
             data={
                 "bpm": bpm_values,
@@ -402,9 +559,34 @@ class PyVHRService(BaseService):
                 "hrv": hrv_data,
                 "method": method,
                 "confidence": confidence,
+                "fps": float(fps),
+                "n_frames": int(len(frames_rgb)),
             },
             warnings=warnings,
         )
+
+        if render_video:
+            if video_path:
+                out_name, out_warnings = self._write_annotated_video(
+                    video_path=video_path,
+                    fps=float(fps),
+                    times_s=bpm_times,
+                    bpm_values=bpm_values,
+                    bpm_mean=bpm_mean,
+                    confidence=confidence,
+                    method=method,
+                    progress=progress,
+                )
+                res.output_path = out_name
+                if out_warnings:
+                    res.warnings = (res.warnings or []) + out_warnings
+            else:
+                res.warnings = (res.warnings or []) + ["Output video unavailable (missing source video path)."]
+
+        if progress:
+            progress.update(stage="analyze", message="Done", percent=100.0, force=True)
+
+        return res
 
     def _compute_hrv(self, bvps, timesES) -> dict:
         """Compute basic HRV metrics from BVP signal."""

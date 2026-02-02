@@ -314,6 +314,10 @@ def test_realtime_vitals_fallback_batch():
     assert res.status_code == 200
     payload = res.json()
     assert payload["success"] is True
+    assert payload["output_url"]
+    out_path = _local_path_from_files_url(payload["output_url"])
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
     bpm_mean = float(payload["data"]["bpm_mean"])
     assert abs(bpm_mean - 72.0) <= 5.0
 
@@ -399,6 +403,10 @@ def test_mit_realtime_batch_face_smoke():
     assert res.status_code == 200
     payload = res.json()
     assert payload["success"] is True
+    assert payload["output_url"]
+    out_path = _local_path_from_files_url(payload["output_url"])
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
     bpm_mean = float(payload["data"]["bpm_mean"])
     assert 40.0 <= bpm_mean <= 180.0
 

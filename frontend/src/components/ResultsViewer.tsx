@@ -154,7 +154,7 @@ function VideoComparisonResult({ result, originalFile }: { result: ProcessingRes
   );
 }
 
-function VitalsResult({ result }: { result: ProcessingResponse; mode: Mode }) {
+function VitalsResult({ result, mode }: { result: ProcessingResponse; mode: Mode }) {
   const data = asRecord(result.data);
   const bpmVal = data.bpm;
   const bvp = Array.isArray(data.bvp) ? data.bvp.filter(isNumber) : [];
@@ -194,9 +194,32 @@ function VitalsResult({ result }: { result: ProcessingResponse; mode: Mode }) {
   const hrvPsdPower = Array.isArray(hrv.psd_power) ? hrv.psd_power.filter(isNumber) : [];
   const psdFreqs = Array.isArray(data.psd_freqs) ? data.psd_freqs.filter(isNumber) : [];
   const psdPower = Array.isArray(data.psd_power) ? data.psd_power.filter(isNumber) : [];
+  const videoUrl = result.output_url ? resolveBackendUrl(result.output_url) : undefined;
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
+      {mode === 'realtime' && videoUrl && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Play className="h-4 w-4 text-primary" />
+              Output Video
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="dark-panel-deep p-1">
+              <video src={videoUrl} controls className="w-full rounded" />
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <a href={videoUrl} download className="gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                Download Output Video
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Big BPM readout */}
       <Card>
         <CardHeader className="pb-2">

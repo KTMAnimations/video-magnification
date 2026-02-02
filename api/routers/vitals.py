@@ -130,6 +130,7 @@ async def extract_vitals_realtime(
                 error_job(job_id, result.error or "Processing failed")
         return ProcessingResponse(
             success=result.success,
+            output_url=f"/files/processed/{result.output_path}" if result.output_path else None,
             data=result.data,
             error=result.error,
             warnings=result.warnings,
