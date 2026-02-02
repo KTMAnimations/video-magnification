@@ -24,13 +24,39 @@ PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
 _FLOWMAG_IMPORT_LOCK = RLock()
 
+DEFAULT_RAFT_CHECKPOINT = Path("backends/flowmag/checkpoints/raft_chkpt_00140.pth")
+DEFAULT_ARFLOW_CHECKPOINT = Path("backends/flowmag/checkpoints/arflow_chkpt_00140.pth")
+DEFAULT_RAFT_CONFIG = Path("backends/flowmag/configs/alpha16.color10.yaml")
+DEFAULT_ARFLOW_CONFIG = Path("backends/flowmag/configs/alpha16.color10.arflow.yaml")
+
 
 def _checkpoint_path() -> Path:
-    return Path(os.environ.get("VMAG_FLOWMAG_CHECKPOINT", "backends/flowmag/checkpoints/raft_chkpt_00140.pth"))
+    ckpt_env = os.environ.get("VMAG_FLOWMAG_CHECKPOINT")
+    if ckpt_env:
+        return Path(ckpt_env)
+
+    cfg_env = (os.environ.get("VMAG_FLOWMAG_CONFIG") or "").lower()
+    if "arflow" in cfg_env:
+        return DEFAULT_ARFLOW_CHECKPOINT
+    if "raft" in cfg_env:
+        return DEFAULT_RAFT_CHECKPOINT
+
+    if DEFAULT_RAFT_CHECKPOINT.exists():
+        return DEFAULT_RAFT_CHECKPOINT
+    if DEFAULT_ARFLOW_CHECKPOINT.exists():
+        return DEFAULT_ARFLOW_CHECKPOINT
+    return DEFAULT_RAFT_CHECKPOINT
 
 
 def _config_path() -> Path:
-    return Path(os.environ.get("VMAG_FLOWMAG_CONFIG", "backends/flowmag/configs/alpha16.color10.yaml"))
+    cfg_env = os.environ.get("VMAG_FLOWMAG_CONFIG")
+    if cfg_env:
+        return Path(cfg_env)
+
+    ckpt = _checkpoint_path()
+    if "arflow" in ckpt.name.lower():
+        return DEFAULT_ARFLOW_CONFIG
+    return DEFAULT_RAFT_CONFIG
 
 
 @dataclass(frozen=True)
