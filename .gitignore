@@ -47,6 +47,7 @@ backends/**/ckpts/*.pth
 backends/**/resources/**/*.pth
 backends/**/resources/**/*.pt
 backends/**/resources/**/*.hdf5
+backends/flowmag/*.pth
 
 # Playwright/MCP artifacts
 .playwright-mcp/e2e-*.png
