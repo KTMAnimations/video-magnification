@@ -302,7 +302,7 @@ export function VideoRecorder({ onRecordingComplete }: Props) {
 
         {phase !== 'preview' ? (
           <div className="dark-panel-deep p-2">
-            <video ref={liveVideoRef} className="w-full rounded aspect-video bg-black" playsInline muted />
+            <video ref={liveVideoRef} className="w-full rounded aspect-video bg-black" style={{ transform: 'scaleX(-1)' }} playsInline muted />
           </div>
         ) : (
           <div className="dark-panel-deep p-2">
