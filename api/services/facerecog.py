@@ -114,6 +114,12 @@ class FaceRecogService(BaseService):
         self._last_error = None
         return True
 
+    def last_error(self) -> str | None:
+        """Return the last availability error message, if any."""
+        if not self._checked:
+            self.is_available()
+        return self._last_error
+
     def recognize_rgb_frame(self, rgb_frame: np.ndarray) -> list[FaceMatch]:
         """Recognize faces in an RGB frame.
 

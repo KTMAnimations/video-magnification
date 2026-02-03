@@ -415,6 +415,7 @@ export function WebcamPanel({ onStop }: Props) {
     new Set((latestData?.faces ?? []).map((f) => (f.name || '').trim()).filter((n) => n.length > 0)),
   );
   const faceDisplay = faceNames.length === 0 ? '--' : faceNames.length === 1 ? faceNames[0] : `${faceNames[0]} +${faceNames.length - 1}`;
+  const faceError = (latestData?.faces_error || '').trim();
 
   return (
     <div className="p-4 space-y-4 max-w-4xl mx-auto">
@@ -549,6 +550,11 @@ export function WebcamPanel({ onStop }: Props) {
                     {faceDisplay}
                   </div>
                   <div className="text-xs text-slate-400">Face</div>
+                  {faceError && faceDisplay === '--' && (
+                    <div className="mt-1 max-w-[260px] text-[10px] leading-tight text-amber-200">
+                      {faceError}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

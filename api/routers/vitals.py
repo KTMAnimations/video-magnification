@@ -155,9 +155,12 @@ async def vitals_websocket(websocket: WebSocket):
         return
 
     face_svc = get_facerecog()
-    face_enabled = bool(face_svc.is_available())
     face_every = int(os.environ.get("VMAG_FACE_EVERY_N_FRAMES", "30"))
     face_every = max(0, face_every)
+    face_enabled = bool(face_every > 0 and face_svc.is_available())
+    face_unavailable_error: str | None = None
+    if face_every > 0 and not face_enabled:
+        face_unavailable_error = getattr(face_svc, "last_error", lambda: None)()
     face_frame_idx = 0
     last_faces: list[dict] = []
     last_faces_error: str | None = None
@@ -200,6 +203,8 @@ async def vitals_websocket(websocket: WebSocket):
                     payload["faces"] = last_faces
                     if last_faces_error:
                         payload["faces_error"] = last_faces_error
+                elif face_unavailable_error:
+                    payload["faces_error"] = face_unavailable_error
                 await websocket.send_json(payload)
 
             if len(frame_buffer) >= MIN_FRAMES:
@@ -213,6 +218,8 @@ async def vitals_websocket(websocket: WebSocket):
                         payload["faces"] = last_faces
                         if last_faces_error:
                             payload["faces_error"] = last_faces_error
+                    elif face_unavailable_error:
+                        payload["faces_error"] = face_unavailable_error
                     await websocket.send_json(payload)
                 elif result.error:
                     await websocket.send_json({"error": result.error})
