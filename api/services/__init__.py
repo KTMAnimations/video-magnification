@@ -20,6 +20,9 @@ def _get_service(name: str):
         elif name == "flowmag":
             from api.services.flowmag import FlowMagService
             _instances[name] = FlowMagService()
+        elif name == "facerecog":
+            from api.services.facerecog import FaceRecogService
+            _instances[name] = FaceRecogService()
         elif name == "pyvhr":
             from api.services.pyvhr import PyVHRService
             _instances[name] = PyVHRService()
@@ -54,6 +57,10 @@ def get_fd4mm():
 
 def get_flowmag():
     return _get_service("flowmag")
+
+
+def get_facerecog():
+    return _get_service("facerecog")
 
 
 def get_pyvhr():

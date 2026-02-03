@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, Form, UploadFile, WebSocket, WebSocketDisco
 from api.models.schemas import ProcessingResponse
 from api.progress import ProgressSink, complete_job, error_job, start_job
 from api.upload import cleanup_upload, save_upload
-from api.services import get_factorizephys, get_rhythm_mamba, get_rppg, get_pyvhr
+from api.services import get_factorizephys, get_rhythm_mamba, get_rppg, get_pyvhr, get_facerecog
 
 router = APIRouter()
 
@@ -154,6 +154,14 @@ async def vitals_websocket(websocket: WebSocket):
         await websocket.close()
         return
 
+    face_svc = get_facerecog()
+    face_enabled = bool(face_svc.is_available())
+    face_every = int(os.environ.get("VMAG_FACE_EVERY_N_FRAMES", "30"))
+    face_every = max(0, face_every)
+    face_frame_idx = 0
+    last_faces: list[dict] = []
+    last_faces_error: str | None = None
+
     frame_buffer: List[bytes] = []
     MIN_FRAMES = int(os.environ.get("VMAG_VITALS_MIN_FRAMES", "180"))  # ~6s at 30fps
     PROGRESS_EVERY = int(os.environ.get("VMAG_VITALS_PROGRESS_EVERY_FRAMES", "30"))  # ~1s at 30fps
@@ -163,14 +171,36 @@ async def vitals_websocket(websocket: WebSocket):
             data = await websocket.receive_bytes()
             frame_buffer.append(data)
 
+            if face_enabled and face_every > 0:
+                face_frame_idx += 1
+                if face_frame_idx % face_every == 0:
+                    try:
+                        import cv2
+                        import numpy as np
+
+                        buf = np.frombuffer(data, dtype=np.uint8)
+                        bgr = cv2.imdecode(buf, cv2.IMREAD_COLOR)
+                        if bgr is None:
+                            raise ValueError("Failed to decode JPEG frame.")
+                        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+                        matches = await asyncio.to_thread(face_svc.recognize_rgb_frame, rgb)
+                        last_faces = [m.to_json() for m in matches]
+                        last_faces_error = None
+                    except Exception as e:
+                        # Keep the last known matches to avoid UI flicker.
+                        last_faces_error = f"{type(e).__name__}: {e}"
+
             if len(frame_buffer) < MIN_FRAMES and PROGRESS_EVERY > 0 and (len(frame_buffer) % PROGRESS_EVERY == 0):
-                await websocket.send_json(
-                    {
-                        "status": "collecting",
-                        "frames_collected": len(frame_buffer),
-                        "frames_needed": MIN_FRAMES,
-                    }
-                )
+                payload: dict = {
+                    "status": "collecting",
+                    "frames_collected": len(frame_buffer),
+                    "frames_needed": MIN_FRAMES,
+                }
+                if face_enabled:
+                    payload["faces"] = last_faces
+                    if last_faces_error:
+                        payload["faces_error"] = last_faces_error
+                await websocket.send_json(payload)
 
             if len(frame_buffer) >= MIN_FRAMES:
                 loop = asyncio.get_event_loop()
@@ -178,7 +208,12 @@ async def vitals_websocket(websocket: WebSocket):
                     None, svc.process_frames, frame_buffer, 30.0
                 )
                 if result.success and result.data:
-                    await websocket.send_json(result.data)
+                    payload = dict(result.data)
+                    if face_enabled:
+                        payload["faces"] = last_faces
+                        if last_faces_error:
+                            payload["faces_error"] = last_faces_error
+                    await websocket.send_json(payload)
                 elif result.error:
                     await websocket.send_json({"error": result.error})
 

@@ -11,6 +11,9 @@ import { Progress } from './ui/progress';
 
 type LiveInputSource = 'camera' | 'mit';
 
+const CAPTURE_W = 320;
+const CAPTURE_H = 240;
+
 const MIT_TEST_VIDEOS: { label: string; path: string }[] = [
   { label: 'face.mp4 (pulse)', path: '/test-videos/mit-evm/source/face.mp4' },
   { label: 'face2.mp4 (pulse)', path: '/test-videos/mit-evm/source/face2.mp4' },
@@ -41,12 +44,14 @@ export function WebcamPanel({ onStop }: Props) {
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const faceCanvasRef = useRef<HTMLCanvasElement>(null);
   const intervalRef = useRef<number | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [inputSource, setInputSource] = useState<LiveInputSource>('camera');
   const [mitVideoPath, setMitVideoPath] = useState(MIT_TEST_VIDEOS[0]?.path ?? '');
   const [mirrorPreview, setMirrorPreview] = useState(true);
   const [pulseOverlay, setPulseOverlay] = useState(true);
+  const [faceOverlay, setFaceOverlay] = useState(true);
   const [useMitReferenceOverlay, setUseMitReferenceOverlay] = useState(true);
   const [overlayAmplification, setOverlayAmplification] = useState(50);
   const { connected, connectionError, connect, disconnect, sendFrame, latestData, bpmHistory, collecting } = useVitalsWebSocket();
@@ -176,8 +181,8 @@ export function WebcamPanel({ onStop }: Props) {
     const captureCtx = captureCanvas.getContext('2d', { willReadFrequently: true });
     if (!captureCtx) return;
 
-    const W = 320;
-    const H = 240;
+    const W = CAPTURE_W;
+    const H = CAPTURE_H;
     captureCanvas.width = W;
     captureCanvas.height = H;
 
@@ -334,8 +339,82 @@ export function WebcamPanel({ onStop }: Props) {
     };
   }, [streaming, connected, sendFrame, pulseOverlay, activeMitReferenceOverlay, overlayAmplification]);
 
+  useEffect(() => {
+    const canvas = faceCanvasRef.current;
+    if (!canvas) return;
+
+    canvas.width = CAPTURE_W;
+    canvas.height = CAPTURE_H;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, CAPTURE_W, CAPTURE_H);
+    if (!connected || !faceOverlay) return;
+
+    const faces = latestData?.faces ?? [];
+    if (faces.length === 0) return;
+
+    const stroke = '#ef4444'; // rose-500
+    const fill = 'rgba(239, 68, 68, 0.85)';
+    const text = '#ffffff';
+    const pad = 4;
+    const labelH = 18;
+
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = stroke;
+    ctx.font = '14px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+    ctx.textBaseline = 'top';
+
+    for (const face of faces) {
+      const box = face.box;
+      if (!box) continue;
+
+      const top = box.top;
+      const right = box.right;
+      const bottom = box.bottom;
+      const left = box.left;
+
+      const w = right - left;
+      const h = bottom - top;
+      if (w <= 0 || h <= 0) continue;
+
+      const x = mirrorPreview ? CAPTURE_W - right : left;
+      const y = top;
+
+      ctx.strokeRect(x, y, w, h);
+
+      const maxTextW = Math.max(0, w - pad * 2);
+      const fullLabel = (face.name || 'Unknown').trim() || 'Unknown';
+      let label = fullLabel;
+      if (maxTextW > 0) {
+        while (label.length > 1 && ctx.measureText(`${label}…`).width > maxTextW) {
+          label = label.slice(0, -1);
+        }
+        if (label !== fullLabel) label = `${label}…`;
+      }
+
+      let labelY = bottom;
+      if (labelY + labelH > CAPTURE_H) labelY = Math.max(0, y - labelH);
+
+      ctx.fillStyle = fill;
+      ctx.fillRect(x, labelY, w, labelH);
+
+      ctx.fillStyle = text;
+      ctx.fillText(label, x + pad, labelY + 2);
+    }
+
+    ctx.restore();
+  }, [connected, faceOverlay, latestData?.faces, mirrorPreview]);
+
   const bpmValue = latestData?.bpm_mean ?? latestData?.bpm;
   const bpmDisplay = typeof bpmValue === 'number' ? Math.round(bpmValue) : '--';
+
+  const faceNames = Array.from(
+    new Set((latestData?.faces ?? []).map((f) => (f.name || '').trim()).filter((n) => n.length > 0)),
+  );
+  const faceDisplay = faceNames.length === 0 ? '--' : faceNames.length === 1 ? faceNames[0] : `${faceNames[0]} +${faceNames.length - 1}`;
 
   return (
     <div className="p-4 space-y-4 max-w-4xl mx-auto">
@@ -448,6 +527,14 @@ export function WebcamPanel({ onStop }: Props) {
                 />
               )}
 
+              {/* Face recognition overlay */}
+              {connected && faceOverlay && (
+                <canvas
+                  ref={faceCanvasRef}
+                  className="absolute inset-0 w-full h-full rounded pointer-events-none"
+                />
+              )}
+
               {/* BPM overlay */}
               <div className="absolute top-3 right-3 text-right pointer-events-none">
                 <div className="text-4xl font-bold text-rose-500">
@@ -455,6 +542,15 @@ export function WebcamPanel({ onStop }: Props) {
                 </div>
                 <div className="text-xs text-slate-400">BPM</div>
               </div>
+
+              {connected && faceOverlay && (
+                <div className="absolute top-3 left-3 pointer-events-none">
+                  <div className="text-base font-semibold text-slate-100">
+                    {faceDisplay}
+                  </div>
+                  <div className="text-xs text-slate-400">Face</div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -479,6 +575,15 @@ export function WebcamPanel({ onStop }: Props) {
                 }}
               />
               Pulse overlay
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={faceOverlay}
+                onChange={(e) => setFaceOverlay(e.target.checked)}
+              />
+              Face recognition
             </label>
             {inputSource === 'mit' && MIT_REFERENCE_OVERLAY[mitVideoPath] && (
               <label className="flex items-center gap-2">

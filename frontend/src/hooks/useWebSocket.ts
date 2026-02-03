@@ -1,5 +1,18 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
+interface FaceBox {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+interface FaceMatch {
+  name: string;
+  distance: number;
+  box: FaceBox;
+}
+
 interface VitalsData {
   bpm?: number;
   bpm_mean?: number;
@@ -9,6 +22,8 @@ interface VitalsData {
   status?: string;
   frames_collected?: number;
   frames_needed?: number;
+  faces?: FaceMatch[];
+  faces_error?: string;
 }
 
 export function useVitalsWebSocket() {
@@ -85,11 +100,15 @@ export function useVitalsWebSocket() {
 
           if (data.status === 'collecting' && typeof data.frames_collected === 'number' && typeof data.frames_needed === 'number') {
             setCollecting({ collected: data.frames_collected, needed: data.frames_needed });
-            return;
+          } else if (
+            typeof data.bpm_mean === 'number' ||
+            typeof data.bpm === 'number' ||
+            (typeof data.error === 'string' && data.error)
+          ) {
+            setCollecting(null);
           }
 
-          setCollecting(null);
-          setLatestData(data);
+          setLatestData((prev) => ({ ...(prev ?? {}), ...data }));
           if (typeof data.error === 'string' && data.error) setConnectionError(data.error);
           if (typeof data.bpm_mean === 'number' && Number.isFinite(data.bpm_mean)) {
             setBpmHistory((prev) => [
