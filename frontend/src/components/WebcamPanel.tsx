@@ -503,7 +503,7 @@ export function WebcamPanel({ onStop }: Props) {
                 muted
                 playsInline
                 autoPlay
-                style={mirrorPreview ? { transform: 'scaleX(-1)' } : undefined}
+                style={{ objectFit: 'contain', ...(mirrorPreview ? { transform: 'scaleX(-1)' } : undefined) }}
               />
 
               {connected && pulseOverlay && activeMitReferenceOverlay && (
@@ -514,7 +514,7 @@ export function WebcamPanel({ onStop }: Props) {
                   playsInline
                   autoPlay
                   loop
-                  style={mirrorPreview ? { transform: 'scaleX(-1)' } : undefined}
+                  style={{ objectFit: 'contain', ...(mirrorPreview ? { transform: 'scaleX(-1)' } : undefined) }}
                 />
               )}
 
