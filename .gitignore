@@ -50,5 +50,4 @@ backends/**/resources/**/*.hdf5
 backends/flowmag/*.pth
 
 # Playwright/MCP artifacts
-.playwright-mcp/e2e-*.png
-.playwright-mcp/uvicorn.log
+.playwright-mcp/
